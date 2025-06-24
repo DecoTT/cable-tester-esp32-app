@@ -12,7 +12,6 @@ interface Sku {
   codigo: string;
   descripcion: string;
   fechaCreacion: string;
-  operadorCreacion: string;
 }
 
 interface SkuDatabaseProps {
@@ -57,8 +56,7 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
     const newSku: Sku = {
       codigo: newSkuCodigo.toUpperCase(),
       descripcion: newSkuDescripcion.trim(),
-      fechaCreacion: getCurrentDateString(),
-      operadorCreacion: currentOperator || 'Sin operador'
+      fechaCreacion: getCurrentDateString()
     };
 
     setSkus(prev => [...prev, newSku]);
@@ -210,7 +208,6 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                   <th className="text-left p-2">Código SKU</th>
                   <th className="text-left p-2">Descripción</th>
                   <th className="text-left p-2">Fecha Creación</th>
-                  <th className="text-left p-2">Operador</th>
                   <th className="text-left p-2">Estado</th>
                   <th className="text-left p-2">Acciones</th>
                 </tr>
@@ -225,7 +222,6 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                       )}
                     </td>
                     <td className="p-2">{sku.fechaCreacion}</td>
-                    <td className="p-2">{sku.operadorCreacion}</td>
                     <td className="p-2">
                       <Badge variant={sku.descripcion.trim() ? "default" : "secondary"}>
                         {sku.descripcion.trim() ? "Completo" : "Incompleto"}

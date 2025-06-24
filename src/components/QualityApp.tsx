@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,7 +55,6 @@ interface Sku {
   codigo: string;
   descripcion: string;
   fechaCreacion: string;
-  operadorCreacion: string;
 }
 
 const QualityApp = () => {
@@ -218,8 +216,7 @@ const QualityApp = () => {
       const newSku: Sku = {
         codigo: currentSku,
         descripcion: '',
-        fechaCreacion: getCurrentDateString(),
-        operadorCreacion: currentOperator
+        fechaCreacion: getCurrentDateString()
       };
       setSkuDatabase(prev => [...prev, newSku]);
     }
@@ -309,7 +306,7 @@ const QualityApp = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Sistema de Control de Calidad</h1>
-              <p className="text-gray-600 mt-2">Pruebas automatizadas con Arduino</p>
+              <p className="text-gray-600 mt-2">Pruebas automatizadas con Tester</p>
             </div>
             <div className="flex items-center space-x-4">
               <ConnectionIndicator isConnected={isConnected} />
@@ -562,6 +559,20 @@ const QualityApp = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Copyright Footer */}
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="text-center text-sm text-gray-600">
+            © {new Date().getFullYear()} <a 
+              href="https://sbcgroup.com.mx/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline"
+            >
+              SBC Group
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
