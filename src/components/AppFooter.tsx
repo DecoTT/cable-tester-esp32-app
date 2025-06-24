@@ -11,7 +11,14 @@ const AppFooter: React.FC = () => {
           rel="noopener noreferrer"
           className="text-blue-600 hover:text-blue-800 underline"
         >
-          Site
+          ES
+        </a> <a 
+          href="https://sbcgroup.com.mx/en/" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-blue-600 hover:text-blue-800 underline"
+        >
+          EN
         </a>
       </div>
     </div>
