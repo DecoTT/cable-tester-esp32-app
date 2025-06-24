@@ -1,33 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
-import { 
-  Play, 
-  Square, 
-  Wifi, 
-  WifiOff, 
-  Download, 
-  Printer, 
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Package,
-  User
-} from 'lucide-react';
-import ConnectionIndicator from './ConnectionIndicator';
+import { AlertCircle } from 'lucide-react';
+import AppHeader from './AppHeader';
+import NavigationTabs from './NavigationTabs';
+import TestingTab from './TestingTab';
 import TestResults from './TestResults';
 import SkuDatabase from './SkuDatabase';
 import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
+import AppFooter from './AppFooter';
 
 interface TestResult {
   id: string;
@@ -127,10 +112,8 @@ const QualityApp = () => {
   };
 
   const connectToArduino = async () => {
-    // Simulación de conexión - aquí iría la lógica real de conexión serial
     console.log('Intentando conectar con Arduino...');
     
-    // Simular tiempo de conexión
     setTimeout(() => {
       setIsConnected(true);
       toast({
@@ -163,13 +146,11 @@ const QualityApp = () => {
     setIsTestRunning(true);
     setTestStartTime(new Date());
     
-    // Simular lectura de Arduino
     simulateArduinoTest();
   };
 
   const simulateArduinoTest = () => {
-    // Simulación de prueba de Arduino - en implementación real esto vendría del puerto serial
-    const testDuration = Math.random() * 3000 + 1000; // 1-4 segundos
+    const testDuration = Math.random() * 3000 + 1000;
     
     setTimeout(() => {
       const results = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'Error 1', 'Critico'];
@@ -211,7 +192,6 @@ const QualityApp = () => {
     setIsTestRunning(false);
     setTestStartTime(null);
 
-    // Agregar SKU a la base de datos si es nuevo
     if (!skuDatabase.find(sku => sku.codigo === currentSku)) {
       const newSku: Sku = {
         codigo: currentSku,
@@ -221,7 +201,6 @@ const QualityApp = () => {
       setSkuDatabase(prev => [...prev, newSku]);
     }
 
-    // Verificar si necesitamos generar etiqueta (cada 10 OK)
     if (result === 'OK' && (okCount + 1) % 10 === 0) {
       generateLabel();
     }
@@ -233,7 +212,6 @@ const QualityApp = () => {
       description: `Etiqueta automática para lote ${currentLote} - 10 cables OK`,
     });
     
-    // Actualizar lote en la base de datos
     const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
     
     if (existingLote) {
@@ -301,189 +279,31 @@ const QualityApp = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Sistema de Control de Calidad</h1>
-              <p className="text-gray-600 mt-2">Pruebas automatizadas con Tester</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <ConnectionIndicator isConnected={isConnected} />
-              <Button 
-                onClick={isConnected ? disconnectArduino : connectToArduino}
-                variant={isConnected ? "destructive" : "default"}
-                className="flex items-center space-x-2"
-              >
-                {isConnected ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
-                <span>{isConnected ? 'Desconectar' : 'Conectar'}</span>
-              </Button>
-            </div>
-          </div>
-        </div>
+        <AppHeader 
+          isConnected={isConnected}
+          onConnect={connectToArduino}
+          onDisconnect={disconnectArduino}
+        />
 
-        {/* Navigation Tabs */}
         <div className="bg-white rounded-lg shadow-lg">
-          <div className="flex border-b">
-            {[
-              { id: 'testing', label: 'Pruebas', icon: Play },
-              { id: 'results', label: 'Resultados', icon: CheckCircle },
-              { id: 'skus', label: 'SKUs', icon: Package },
-              { id: 'labels', label: 'Etiquetas', icon: Printer },
-              { id: 'logs', label: 'Logs', icon: Download },
-              { id: 'operator', label: 'Operador', icon: User }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id 
-                    ? 'border-blue-500 text-blue-600 bg-blue-50' 
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <tab.icon className="w-4 h-4" />
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <NavigationTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
           <div className="p-6">
             {activeTab === 'testing' && (
-              <div className="space-y-6">
-                {/* Control Panel */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center space-x-2">
-                        <Package className="w-5 h-5" />
-                        <span>SKU Actual</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Input
-                        value={currentSku}
-                        onChange={(e) => setCurrentSku(e.target.value.toUpperCase())}
-                        placeholder="Ingrese SKU"
-                        className="mb-4"
-                      />
-                      <div className="text-sm text-gray-600">
-                        <p>Formato: NP-SCA-4</p>
-                        <p>Lote actual: {currentLote}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center space-x-2">
-                        <User className="w-5 h-5" />
-                        <span>Operador</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Input
-                        value={currentOperator}
-                        onChange={(e) => setCurrentOperator(e.target.value)}
-                        placeholder="Nombre del operador"
-                        className="mb-4"
-                      />
-                      <div className="text-sm text-gray-600">
-                        <p>Fecha: {getCurrentDateString()}</p>
-                        <p>Hora: {getCurrentTimeString()}</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center space-x-2">
-                        <Clock className="w-5 h-5" />
-                        <span>Control de Prueba</span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Button 
-                        onClick={startTest}
-                        disabled={!isConnected || isTestRunning || !currentSku || !currentOperator}
-                        className="w-full mb-4"
-                        size="lg"
-                      >
-                        {isTestRunning ? (
-                          <>
-                            <Square className="w-4 h-4 mr-2" />
-                            Probando...
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-4 h-4 mr-2" />
-                            Iniciar Prueba
-                          </>
-                        )}
-                      </Button>
-                      
-                      {isTestRunning && (
-                        <div className="text-center">
-                          <div className="animate-pulse text-blue-600 font-medium">
-                            Prueba en progreso...
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Statistics */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="p-6">
-                      <div className="flex items-center">
-                        <CheckCircle className="w-8 h-8 text-green-500" />
-                        <div className="ml-4">
-                          <p className="text-sm font-medium text-gray-600">Cables OK</p>
-                          <p className="text-2xl font-bold text-green-600">{okCount}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-6">
-                      <div className="flex items-center">
-                        <XCircle className="w-8 h-8 text-red-500" />
-                        <div className="ml-4">
-                          <p className="text-sm font-medium text-gray-600">Cables Malos</p>
-                          <p className="text-2xl font-bold text-red-600">{totalProcessed - okCount}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-6">
-                      <div className="flex items-center">
-                        <Package className="w-8 h-8 text-blue-500" />
-                        <div className="ml-4">
-                          <p className="text-sm font-medium text-gray-600">Total Procesados</p>
-                          <p className="text-2xl font-bold text-blue-600">{totalProcessed}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardContent className="p-6">
-                      <div className="flex items-center">
-                        <Printer className="w-8 h-8 text-purple-500" />
-                        <div className="ml-4">
-                          <p className="text-sm font-medium text-gray-600">Próxima Etiqueta</p>
-                          <p className="text-2xl font-bold text-purple-600">{10 - (okCount % 10)}</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
+              <TestingTab
+                currentSku={currentSku}
+                setCurrentSku={setCurrentSku}
+                currentOperator={currentOperator}
+                setCurrentOperator={setCurrentOperator}
+                currentLote={currentLote}
+                isConnected={isConnected}
+                isTestRunning={isTestRunning}
+                onStartTest={startTest}
+                okCount={okCount}
+                totalProcessed={totalProcessed}
+                getCurrentDateString={getCurrentDateString}
+                getCurrentTimeString={getCurrentTimeString}
+              />
             )}
 
             {activeTab === 'results' && (
@@ -526,7 +346,6 @@ const QualityApp = () => {
           </div>
         </div>
 
-        {/* Error Dialog */}
         <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
           <DialogContent>
             <DialogHeader>
@@ -560,19 +379,7 @@ const QualityApp = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Copyright Footer */}
-        <div className="bg-white rounded-lg shadow-lg p-4">
-          <div className="text-center text-sm text-gray-600">
-            © {new Date().getFullYear()} <a 
-              href="https://sbcgroup.com.mx/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline"
-            >
-              SBC Group
-            </a>
-          </div>
-        </div>
+        <AppFooter />
       </div>
     </div>
   );
