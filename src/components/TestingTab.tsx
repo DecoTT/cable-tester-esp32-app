@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +26,7 @@ interface TestingTabProps {
   totalProcessed: number;
   getCurrentDateString: () => string;
   getCurrentTimeString: () => string;
+  standardPack: number;
 }
 
 const TestingTab: React.FC<TestingTabProps> = ({
@@ -41,7 +41,8 @@ const TestingTab: React.FC<TestingTabProps> = ({
   okCount,
   totalProcessed,
   getCurrentDateString,
-  getCurrentTimeString
+  getCurrentTimeString,
+  standardPack
 }) => {
   return (
     <div className="space-y-6">
@@ -64,6 +65,7 @@ const TestingTab: React.FC<TestingTabProps> = ({
             <div className="text-sm text-gray-600">
               <p>Formato: NP-SCA-4</p>
               <p>Lote actual: {currentLote}</p>
+              <p>Standard Pack: {standardPack} unidades</p>
             </div>
           </CardContent>
         </Card>
@@ -171,7 +173,7 @@ const TestingTab: React.FC<TestingTabProps> = ({
               <Printer className="w-8 h-8 text-purple-500" />
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600">Próxima Etiqueta</p>
-                <p className="text-2xl font-bold text-purple-600">{10 - (okCount % 10)}</p>
+                <p className="text-2xl font-bold text-purple-600">{standardPack - (okCount % standardPack)}</p>
               </div>
             </div>
           </CardContent>

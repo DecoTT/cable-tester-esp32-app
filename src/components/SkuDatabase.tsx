@@ -7,12 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Package } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-
-interface Sku {
-  codigo: string;
-  descripcion: string;
-  fechaCreacion: string;
-}
+import { Sku } from '@/types';
 
 interface SkuDatabaseProps {
   skus: Sku[];
@@ -26,6 +21,7 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
   const [editingSku, setEditingSku] = useState<Sku | null>(null);
   const [newSkuCodigo, setNewSkuCodigo] = useState('');
   const [newSkuDescripcion, setNewSkuDescripcion] = useState('');
+  const [newSkuStandardPack, setNewSkuStandardPack] = useState('10');
 
   const getCurrentDateString = () => {
     const now = new Date();
@@ -44,6 +40,16 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
       return;
     }
 
+    const standardPackValue = parseInt(newSkuStandardPack);
+    if (isNaN(standardPackValue) || standardPackValue < 1 || standardPackValue > 9999) {
+      toast({
+        title: "Error",
+        description: "Standard Pack debe ser un número entre 1 y 9999",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (skus.find(sku => sku.codigo === newSkuCodigo.toUpperCase())) {
       toast({
         title: "Error",
@@ -56,25 +62,30 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
     const newSku: Sku = {
       codigo: newSkuCodigo.toUpperCase(),
       descripcion: newSkuDescripcion.trim(),
-      fechaCreacion: getCurrentDateString()
+      fechaCreacion: getCurrentDateString(),
+      standardPack: standardPackValue
     };
 
     setSkus(prev => [...prev, newSku]);
     setNewSkuCodigo('');
     setNewSkuDescripcion('');
+    setNewSkuStandardPack('10');
     setIsAddDialogOpen(false);
 
     toast({
       title: "SKU agregado",
-      description: `SKU ${newSku.codigo} agregado exitosamente`,
+      description: `SKU ${newSku.codigo} agregado con SP de ${standardPackValue}`,
     });
   };
 
   const handleEditSku = () => {
-    if (!editingSku || !editingSku.descripcion.trim()) {
+    if (!editingSku) return;
+
+    const standardPackValue = editingSku.standardPack;
+    if (isNaN(standardPackValue) || standardPackValue < 1 || standardPackValue > 9999) {
       toast({
         title: "Error",
-        description: "La descripción es obligatoria",
+        description: "Standard Pack debe ser un número entre 1 y 9999",
         variant: "destructive"
       });
       return;
@@ -82,7 +93,11 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
 
     setSkus(prev => prev.map(sku => 
       sku.codigo === editingSku.codigo 
-        ? { ...sku, descripcion: editingSku.descripcion.trim() }
+        ? { 
+            ...sku, 
+            descripcion: editingSku.descripcion.trim(),
+            standardPack: standardPackValue
+          }
         : sku
     ));
     
@@ -106,7 +121,7 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Base de Datos de SKUs</h2>
-          <p className="text-gray-600">Gestión de códigos y descripciones de productos</p>
+          <p className="text-gray-600">Gestión de códigos, descripciones y Standard Pack</p>
         </div>
         
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -138,6 +153,19 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                   placeholder="Descripción del producto"
                   className="mt-1"
                 />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Standard Pack (1-9999)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="9999"
+                  value={newSkuStandardPack}
+                  onChange={(e) => setNewSkuStandardPack(e.target.value)}
+                  placeholder="10"
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Cantidad de cables para generar etiqueta</p>
               </div>
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
@@ -207,6 +235,7 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                 <tr className="border-b">
                   <th className="text-left p-2">Código SKU</th>
                   <th className="text-left p-2">Descripción</th>
+                  <th className="text-left p-2">Standard Pack</th>
                   <th className="text-left p-2">Fecha Creación</th>
                   <th className="text-left p-2">Estado</th>
                   <th className="text-left p-2">Acciones</th>
@@ -220,6 +249,11 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                       {sku.descripcion || (
                         <span className="text-gray-400 italic">Sin descripción</span>
                       )}
+                    </td>
+                    <td className="p-2">
+                      <Badge variant="outline" className="font-mono">
+                        {sku.standardPack || 10}
+                      </Badge>
                     </td>
                     <td className="p-2">{sku.fechaCreacion}</td>
                     <td className="p-2">
@@ -276,6 +310,18 @@ const SkuDatabase: React.FC<SkuDatabaseProps> = ({ skus, setSkus, currentOperato
                 placeholder="Descripción del producto"
                 className="mt-1"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Standard Pack (1-9999)</label>
+              <Input
+                type="number"
+                min="1"
+                max="9999"
+                value={editingSku?.standardPack || 10}
+                onChange={(e) => setEditingSku(prev => prev ? {...prev, standardPack: parseInt(e.target.value) || 10} : null)}
+                className="mt-1"
+              />
+              <p className="text-xs text-gray-500 mt-1">Cantidad de cables para generar etiqueta</p>
             </div>
             <div className="flex justify-end space-x-2">
               <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>

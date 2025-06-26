@@ -42,6 +42,7 @@ const QualityApp = () => {
   const [tempCodigoDescription, setTempCodigoDescription] = useState('');
   const [tempCodigoNotas, setTempCodigoNotas] = useState('');
   const [activeTab, setActiveTab] = useState('testing');
+  const [currentStandardPack, setCurrentStandardPack] = useState(10);
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -84,6 +85,17 @@ const QualityApp = () => {
   useEffect(() => {
     localStorage.setItem('log_format', logFormat);
   }, [logFormat]);
+
+  useEffect(() => {
+    if (currentSku) {
+      const sku = skuDatabase.find(s => s.codigo === currentSku);
+      if (sku) {
+        setCurrentStandardPack(sku.standardPack || 10);
+      } else {
+        setCurrentStandardPack(10); // Default para SKUs nuevos
+      }
+    }
+  }, [currentSku, skuDatabase]);
 
   const getCurrentDateString = () => {
     const now = new Date();
@@ -209,7 +221,8 @@ const QualityApp = () => {
       setShowErrorDialog(true);
     }
 
-    if (result === 'OK' && (okCount + 1) % 10 === 0) {
+    // Usar Standard Pack en lugar de valor fijo de 10
+    if (result === 'OK' && (okCount + 1) % currentStandardPack === 0) {
       generateLabel();
     }
   };
@@ -218,9 +231,11 @@ const QualityApp = () => {
     const newSku: Sku = {
       codigo: currentNewSku,
       descripcion: tempSkuDescription,
-      fechaCreacion: getCurrentDateString()
+      fechaCreacion: getCurrentDateString(),
+      standardPack: 10 // Default SP para SKUs nuevos
     };
     setSkuDatabase(prev => [...prev, newSku]);
+    setCurrentStandardPack(10);
     setShowNewSkuDialog(false);
     setTempSkuDescription('');
     setCurrentNewSku('');
@@ -243,7 +258,7 @@ const QualityApp = () => {
   const generateLabel = () => {
     toast({
       title: "Etiqueta generada",
-      description: `Etiqueta automática para lote ${currentLote} - 10 cables OK`,
+      description: `Etiqueta automática para lote ${currentLote} - ${currentStandardPack} cables OK`,
     });
     
     const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
@@ -251,7 +266,7 @@ const QualityApp = () => {
     if (existingLote) {
       setLoteDatabase(prev => prev.map(l => 
         l.id === currentLote && l.sku === currentSku 
-          ? { ...l, cantidad: l.cantidad + 10, buenos: l.buenos + 10, procesados: totalProcessed }
+          ? { ...l, cantidad: l.cantidad + currentStandardPack, buenos: l.buenos + currentStandardPack, procesados: totalProcessed }
           : l
       ));
     } else {
@@ -260,8 +275,8 @@ const QualityApp = () => {
         sku: currentSku,
         fecha: getCurrentDateString(),
         operador: currentOperator,
-        cantidad: 10,
-        buenos: 10,
+        cantidad: currentStandardPack,
+        buenos: currentStandardPack,
         malos: totalProcessed - okCount,
         procesados: totalProcessed
       };
@@ -337,6 +352,7 @@ const QualityApp = () => {
                 totalProcessed={totalProcessed}
                 getCurrentDateString={getCurrentDateString}
                 getCurrentTimeString={getCurrentTimeString}
+                standardPack={currentStandardPack}
               />
             )}
 
@@ -366,6 +382,7 @@ const QualityApp = () => {
                 currentLote={currentLote}
                 okCount={okCount}
                 loteDatabase={loteDatabase}
+                standardPack={currentStandardPack}
               />
             )}
 

@@ -25,6 +25,7 @@ export interface Sku {
   codigo: string;
   descripcion: string;
   fechaCreacion: string;
+  standardPack: number; // Valor entre 0-9999, por defecto 10
 }
 
 export interface CodigoGlobal {
