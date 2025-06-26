@@ -7,7 +7,7 @@ import { CheckCircle, XCircle, AlertTriangle, Clock } from 'lucide-react';
 interface TestResult {
   id: string;
   sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3';
+  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3' | '5001' | '5002' | '6001';
   startTime: Date;
   endTime: Date;
   duration: number;
