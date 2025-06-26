@@ -5,17 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Download, FileText, Calendar, Clock } from 'lucide-react';
-
-interface TestResult {
-  id: string;
-  sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3';
-  startTime: Date;
-  endTime: Date;
-  duration: number;
-  operator: string;
-  date: string;
-}
+import { TestResult } from '@/types';
 
 interface LogsViewerProps {
   results: TestResult[];

@@ -7,17 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { User, Clock, UserCheck, Activity } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-
-interface TestResult {
-  id: string;
-  sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3';
-  startTime: Date;
-  endTime: Date;
-  duration: number;
-  operator: string;
-  date: string;
-}
+import { TestResult } from '@/types';
 
 interface OperatorManagerProps {
   currentOperator: string;
