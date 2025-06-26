@@ -3,17 +3,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, AlertTriangle, Clock } from 'lucide-react';
-
-interface TestResult {
-  id: string;
-  sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3' | '5001' | '5002' | '6001';
-  startTime: Date;
-  endTime: Date;
-  duration: number;
-  operator: string;
-  date: string;
-}
+import { TestResult } from '@/types';
 
 interface TestResultsProps {
   results: TestResult[];

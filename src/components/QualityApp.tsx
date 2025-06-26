@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { AlertCircle } from 'lucide-react';
+import { TestResult, Lote, Sku, CodigoGlobal } from '@/types';
 import AppHeader from './AppHeader';
 import NavigationTabs from './NavigationTabs';
 import TestingTab from './TestingTab';
@@ -16,41 +17,6 @@ import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
 import AppFooter from './AppFooter';
-
-interface TestResult {
-  id: string;
-  sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3' | '5001' | '5002' | '6001';
-  startTime: Date;
-  endTime: Date;
-  duration: number;
-  operator: string;
-  date: string;
-}
-
-interface Lote {
-  id: string;
-  sku: string;
-  fecha: string;
-  operador: string;
-  cantidad: number;
-  buenos: number;
-  malos: number;
-  procesados: number;
-}
-
-interface Sku {
-  codigo: string;
-  descripcion: string;
-  fechaCreacion: string;
-}
-
-interface CodigoGlobal {
-  codigo: string;
-  descripcion: string;
-  notas: string;
-  fechaCreacion: string;
-}
 
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -175,14 +141,17 @@ const QualityApp = () => {
     const testDuration = Math.random() * 3000 + 1000;
     
     setTimeout(() => {
-      const results = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'Critico', '5001', '5002', '6001', 'Error 1'];
-      const randomResult = results[Math.floor(Math.random() * results.length)] as TestResult['result'];
+      // Ahora los resultados vienen de la base de datos de códigos
+      const availableCodes = codigosDatabase.map(c => c.codigo);
+      const defaultResults = ['OK', 'Critico'];
+      const allResults = [...defaultResults, ...availableCodes];
+      const randomResult = allResults[Math.floor(Math.random() * allResults.length)];
       
       completeTest(randomResult);
     }, testDuration);
   };
 
-  const completeTest = (result: TestResult['result']) => {
+  const completeTest = (result: string) => {
     if (!testStartTime) return;
 
     const endTime = new Date();
@@ -214,6 +183,7 @@ const QualityApp = () => {
       setShowNewSkuDialog(true);
     }
 
+    // Verificar si el código ya existe en la DB de códigos
     if (!codigosDatabase.find(codigo => codigo.codigo === result)) {
       const newCodigo: CodigoGlobal = {
         codigo: result,
