@@ -4,6 +4,7 @@ import {
   Play, 
   CheckCircle,
   Package,
+  Code,
   Printer,
   Download,
   User
@@ -19,6 +20,7 @@ const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setActiveTab
     { id: 'testing', label: 'Pruebas', icon: Play },
     { id: 'results', label: 'Resultados', icon: CheckCircle },
     { id: 'skus', label: 'SKUs', icon: Package },
+    { id: 'codigos', label: 'Códigos', icon: Code },
     { id: 'labels', label: 'Etiquetas', icon: Printer },
     { id: 'logs', label: 'Logs', icon: Download },
     { id: 'operator', label: 'Operador', icon: User }

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/hooks/use-toast';
 import { AlertCircle } from 'lucide-react';
 import AppHeader from './AppHeader';
@@ -9,6 +11,7 @@ import NavigationTabs from './NavigationTabs';
 import TestingTab from './TestingTab';
 import TestResults from './TestResults';
 import SkuDatabase from './SkuDatabase';
+import CodigosDatabase from './CodigosDatabase';
 import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
@@ -17,7 +20,7 @@ import AppFooter from './AppFooter';
 interface TestResult {
   id: string;
   sku: string;
-  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3';
+  result: 'OK' | 'Error 1' | 'Critico' | 'Error 2' | 'Error 3' | '5001' | '5002' | '6001';
   startTime: Date;
   endTime: Date;
   duration: number;
@@ -42,6 +45,13 @@ interface Sku {
   fechaCreacion: string;
 }
 
+interface CodigoGlobal {
+  codigo: string;
+  descripcion: string;
+  notas: string;
+  fechaCreacion: string;
+}
+
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentSku, setCurrentSku] = useState('');
@@ -54,30 +64,42 @@ const QualityApp = () => {
   const [currentLote, setCurrentLote] = useState('0001');
   const [logFormat, setLogFormat] = useState<'csv' | 'json' | 'txt'>('csv');
   const [skuDatabase, setSkuDatabase] = useState<Sku[]>([]);
+  const [codigosDatabase, setCodigosDatabase] = useState<CodigoGlobal[]>([]);
   const [loteDatabase, setLoteDatabase] = useState<Lote[]>([]);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [showNewSkuDialog, setShowNewSkuDialog] = useState(false);
+  const [showNewCodigoDialog, setShowNewCodigoDialog] = useState(false);
   const [currentError, setCurrentError] = useState('');
+  const [currentNewSku, setCurrentNewSku] = useState('');
+  const [currentNewCodigo, setCurrentNewCodigo] = useState<CodigoGlobal | null>(null);
+  const [tempSkuDescription, setTempSkuDescription] = useState('');
+  const [tempCodigoDescription, setTempCodigoDescription] = useState('');
+  const [tempCodigoNotas, setTempCodigoNotas] = useState('');
   const [activeTab, setActiveTab] = useState('testing');
 
-  // Cargar datos del localStorage al iniciar
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
+    const savedCodigos = localStorage.getItem('quality_codigos');
     const savedLotes = localStorage.getItem('quality_lotes');
     const savedResults = localStorage.getItem('quality_results_' + getCurrentDateString());
     const savedOperator = localStorage.getItem('current_operator');
     const savedLogFormat = localStorage.getItem('log_format');
 
     if (savedSkus) setSkuDatabase(JSON.parse(savedSkus));
+    if (savedCodigos) setCodigosDatabase(JSON.parse(savedCodigos));
     if (savedLotes) setLoteDatabase(JSON.parse(savedLotes));
     if (savedResults) setTestResults(JSON.parse(savedResults));
     if (savedOperator) setCurrentOperator(savedOperator);
     if (savedLogFormat) setLogFormat(savedLogFormat as 'csv' | 'json' | 'txt');
   }, []);
 
-  // Guardar datos en localStorage cuando cambien
   useEffect(() => {
     localStorage.setItem('quality_skus', JSON.stringify(skuDatabase));
   }, [skuDatabase]);
+
+  useEffect(() => {
+    localStorage.setItem('quality_codigos', JSON.stringify(codigosDatabase));
+  }, [codigosDatabase]);
 
   useEffect(() => {
     localStorage.setItem('quality_lotes', JSON.stringify(loteDatabase));
@@ -153,13 +175,8 @@ const QualityApp = () => {
     const testDuration = Math.random() * 3000 + 1000;
     
     setTimeout(() => {
-      const results = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'Error 1', 'Critico'];
+      const results = ['OK', 'OK', 'OK', 'OK', 'OK', 'OK', 'Critico', '5001', '5002', '6001', 'Error 1'];
       const randomResult = results[Math.floor(Math.random() * results.length)] as TestResult['result'];
-      
-      if (randomResult !== 'OK') {
-        setCurrentError(`Error detectado: ${randomResult}`);
-        setShowErrorDialog(true);
-      }
       
       completeTest(randomResult);
     }, testDuration);
@@ -193,17 +210,64 @@ const QualityApp = () => {
     setTestStartTime(null);
 
     if (!skuDatabase.find(sku => sku.codigo === currentSku)) {
-      const newSku: Sku = {
-        codigo: currentSku,
+      setCurrentNewSku(currentSku);
+      setShowNewSkuDialog(true);
+    }
+
+    if (!codigosDatabase.find(codigo => codigo.codigo === result)) {
+      const newCodigo: CodigoGlobal = {
+        codigo: result,
         descripcion: '',
+        notas: '',
         fechaCreacion: getCurrentDateString()
       };
-      setSkuDatabase(prev => [...prev, newSku]);
+      setCurrentNewCodigo(newCodigo);
+      setCodigosDatabase(prev => [...prev, newCodigo]);
+      
+      if (result !== 'OK') {
+        setShowNewCodigoDialog(true);
+      }
+    }
+
+    if (result !== 'OK') {
+      const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === result);
+      if (codigoInfo) {
+        setCurrentError(`Código: ${result}\nDescripción: ${codigoInfo.descripcion}\nNotas: ${codigoInfo.notas}`);
+      } else {
+        setCurrentError(`Código detectado: ${result}`);
+      }
+      setShowErrorDialog(true);
     }
 
     if (result === 'OK' && (okCount + 1) % 10 === 0) {
       generateLabel();
     }
+  };
+
+  const handleNewSkuSave = () => {
+    const newSku: Sku = {
+      codigo: currentNewSku,
+      descripcion: tempSkuDescription,
+      fechaCreacion: getCurrentDateString()
+    };
+    setSkuDatabase(prev => [...prev, newSku]);
+    setShowNewSkuDialog(false);
+    setTempSkuDescription('');
+    setCurrentNewSku('');
+  };
+
+  const handleNewCodigoSave = () => {
+    if (currentNewCodigo) {
+      setCodigosDatabase(prev => prev.map(codigo => 
+        codigo.codigo === currentNewCodigo.codigo 
+          ? { ...codigo, descripcion: tempCodigoDescription, notas: tempCodigoNotas }
+          : codigo
+      ));
+    }
+    setShowNewCodigoDialog(false);
+    setTempCodigoDescription('');
+    setTempCodigoNotas('');
+    setCurrentNewCodigo(null);
   };
 
   const generateLabel = () => {
@@ -318,6 +382,14 @@ const QualityApp = () => {
               />
             )}
 
+            {activeTab === 'codigos' && (
+              <CodigosDatabase 
+                codigos={codigosDatabase} 
+                setCodigos={setCodigosDatabase}
+                currentOperator={currentOperator}
+              />
+            )}
+
             {activeTab === 'labels' && (
               <LabelGenerator 
                 currentSku={currentSku}
@@ -351,19 +423,16 @@ const QualityApp = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center space-x-2 text-red-600">
                 <AlertCircle className="w-5 h-5" />
-                <span>Error en la Prueba</span>
+                <span>Información del Código</span>
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  {currentError}
+                  <pre className="whitespace-pre-wrap">{currentError}</pre>
                 </AlertDescription>
               </Alert>
-              <p className="text-sm text-gray-600">
-                El cable no pasó la prueba. Verifique la conexión y vuelva a intentar.
-              </p>
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => setShowErrorDialog(false)}>
                   Cerrar
@@ -373,6 +442,73 @@ const QualityApp = () => {
                   startTest();
                 }}>
                   Reintentar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showNewSkuDialog} onOpenChange={setShowNewSkuDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Nuevo SKU Detectado</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p>Se ha detectado un nuevo SKU: <strong>{currentNewSku}</strong></p>
+              <div>
+                <label className="block text-sm font-medium mb-2">Descripción (opcional)</label>
+                <Input
+                  value={tempSkuDescription}
+                  onChange={(e) => setTempSkuDescription(e.target.value)}
+                  placeholder="Descripción del SKU"
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => {
+                  handleNewSkuSave();
+                }}>
+                  Guardar sin descripción
+                </Button>
+                <Button onClick={handleNewSkuSave}>
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showNewCodigoDialog} onOpenChange={setShowNewCodigoDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Nuevo Código Detectado</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p>Se ha detectado un nuevo código: <strong>{currentNewCodigo?.codigo}</strong></p>
+              <div>
+                <label className="block text-sm font-medium mb-2">Descripción</label>
+                <Input
+                  value={tempCodigoDescription}
+                  onChange={(e) => setTempCodigoDescription(e.target.value)}
+                  placeholder="Descripción del código"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Notas</label>
+                <Textarea
+                  value={tempCodigoNotas}
+                  onChange={(e) => setTempCodigoNotas(e.target.value)}
+                  placeholder="Notas adicionales"
+                  rows={3}
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => {
+                  handleNewCodigoSave();
+                }}>
+                  Guardar sin información
+                </Button>
+                <Button onClick={handleNewCodigoSave}>
+                  Guardar
                 </Button>
               </div>
             </div>
