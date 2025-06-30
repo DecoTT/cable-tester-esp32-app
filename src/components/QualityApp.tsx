@@ -17,6 +17,7 @@ import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
 import AppFooter from './AppFooter';
+import { arduinoService, ArduinoTestResult } from '@/services/arduinoService';
 
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -43,6 +44,7 @@ const QualityApp = () => {
   const [tempCodigoNotas, setTempCodigoNotas] = useState('');
   const [activeTab, setActiveTab] = useState('testing');
   const [currentStandardPack, setCurrentStandardPack] = useState(10);
+  const [serverConnected, setServerConnected] = useState(false);
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -97,6 +99,31 @@ const QualityApp = () => {
     }
   }, [currentSku, skuDatabase]);
 
+  useEffect(() => {
+    // Inicializar conexión con el servidor Arduino Bridge
+    const initializeArduinoService = async () => {
+      try {
+        await arduinoService.initializeSocket();
+        setServerConnected(true);
+        
+        // Configurar listeners
+        arduinoService.onTestResult(handleArduinoTestResult);
+        arduinoService.onStatusChange(handleStatusChange);
+        arduinoService.onConnectionLost(handleConnectionLost);
+        
+      } catch (error) {
+        console.error('Error inicializando servicio Arduino:', error);
+        setServerConnected(false);
+      }
+    };
+
+    initializeArduinoService();
+
+    return () => {
+      arduinoService.disconnectSocket();
+    };
+  }, []);
+
   const getCurrentDateString = () => {
     const now = new Date();
     return now.getFullYear().toString() + 
@@ -112,28 +139,61 @@ const QualityApp = () => {
   };
 
   const connectToArduino = async () => {
+    if (!serverConnected) {
+      toast({
+        title: "Error",
+        description: "No hay conexión con el servidor Arduino Bridge",
+        variant: "destructive"
+      });
+      return;
+    }
+
     console.log('Intentando conectar con Arduino...');
     
-    setTimeout(() => {
-      setIsConnected(true);
+    try {
+      const result = await arduinoService.connectToArduino();
+      if (result.success) {
+        setIsConnected(true);
+        toast({
+          title: "Conexión establecida",
+          description: result.message,
+        });
+      } else {
+        toast({
+          title: "Error de conexión",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
       toast({
-        title: "Conexión establecida",
-        description: "Arduino conectado correctamente",
+        title: "Error",
+        description: "Error conectando a Arduino: " + (error as Error).message,
+        variant: "destructive"
       });
-    }, 1500);
+    }
   };
 
-  const disconnectArduino = () => {
-    setIsConnected(false);
-    setIsTestRunning(false);
-    toast({
-      title: "Desconectado",
-      description: "Arduino desconectado",
-      variant: "destructive"
-    });
+  const disconnectArduino = async () => {
+    try {
+      const result = await arduinoService.disconnectArduino();
+      setIsConnected(false);
+      setIsTestRunning(false);
+      toast({
+        title: "Desconectado",
+        description: result.message,
+        variant: "destructive"
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error desconectando Arduino: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
-  const startTest = () => {
+  const startTest = async () => {
     if (!currentSku || !currentOperator) {
       toast({
         title: "Error",
@@ -143,36 +203,50 @@ const QualityApp = () => {
       return;
     }
 
-    setIsTestRunning(true);
-    setTestStartTime(new Date());
-    
-    simulateArduinoTest();
-  };
+    if (!serverConnected) {
+      toast({
+        title: "Error",
+        description: "No hay conexión con el servidor Arduino Bridge",
+        variant: "destructive"
+      });
+      return;
+    }
 
-  const simulateArduinoTest = () => {
-    const testDuration = Math.random() * 3000 + 1000;
-    
-    setTimeout(() => {
-      // Ahora los resultados vienen de la base de datos de códigos
-      const availableCodes = codigosDatabase.map(c => c.codigo);
-      const defaultResults = ['OK', 'Critico'];
-      const allResults = [...defaultResults, ...availableCodes];
-      const randomResult = allResults[Math.floor(Math.random() * allResults.length)];
+    try {
+      setIsTestRunning(true);
+      setTestStartTime(new Date());
       
-      completeTest(randomResult);
-    }, testDuration);
+      const result = await arduinoService.startTest(currentSku, currentOperator);
+      if (!result.success) {
+        setIsTestRunning(false);
+        setTestStartTime(null);
+        toast({
+          title: "Error",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      setIsTestRunning(false);
+      setTestStartTime(null);
+      toast({
+        title: "Error",
+        description: "Error iniciando prueba: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
-  const completeTest = (result: string) => {
+  const handleArduinoTestResult = (arduinoResult: ArduinoTestResult) => {
     if (!testStartTime) return;
 
     const endTime = new Date();
-    const duration = (endTime.getTime() - testStartTime.getTime()) / 1000;
+    const duration = arduinoResult.duration || (endTime.getTime() - testStartTime.getTime()) / 1000;
 
     const newResult: TestResult = {
       id: Date.now().toString(),
       sku: currentSku,
-      result,
+      result: arduinoResult.result,
       startTime: testStartTime,
       endTime,
       duration,
@@ -183,7 +257,7 @@ const QualityApp = () => {
     setTestResults(prev => [newResult, ...prev]);
     setTotalProcessed(prev => prev + 1);
     
-    if (result === 'OK') {
+    if (arduinoResult.result === 'OK') {
       setOkCount(prev => prev + 1);
     }
 
@@ -196,9 +270,9 @@ const QualityApp = () => {
     }
 
     // Verificar si el código ya existe en la DB de códigos
-    if (!codigosDatabase.find(codigo => codigo.codigo === result)) {
+    if (!codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result)) {
       const newCodigo: CodigoGlobal = {
-        codigo: result,
+        codigo: arduinoResult.result,
         descripcion: '',
         notas: '',
         fechaCreacion: getCurrentDateString()
@@ -206,25 +280,39 @@ const QualityApp = () => {
       setCurrentNewCodigo(newCodigo);
       setCodigosDatabase(prev => [...prev, newCodigo]);
       
-      if (result !== 'OK') {
+      if (arduinoResult.result !== 'OK') {
         setShowNewCodigoDialog(true);
       }
     }
 
-    if (result !== 'OK') {
-      const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === result);
+    if (arduinoResult.result !== 'OK') {
+      const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result);
       if (codigoInfo) {
-        setCurrentError(`Código: ${result}\nDescripción: ${codigoInfo.descripcion}\nNotas: ${codigoInfo.notas}`);
+        setCurrentError(`Código: ${arduinoResult.result}\nDescripción: ${codigoInfo.descripcion}\nNotas: ${codigoInfo.notas}`);
       } else {
-        setCurrentError(`Código detectado: ${result}`);
+        setCurrentError(`Código detectado: ${arduinoResult.result}`);
       }
       setShowErrorDialog(true);
     }
 
     // Usar Standard Pack en lugar de valor fijo de 10
-    if (result === 'OK' && (okCount + 1) % currentStandardPack === 0) {
+    if (arduinoResult.result === 'OK' && (okCount + 1) % currentStandardPack === 0) {
       generateLabel();
     }
+  };
+
+  const handleStatusChange = (status: any) => {
+    setIsConnected(status.connected);
+  };
+
+  const handleConnectionLost = (error: { error: string }) => {
+    setIsConnected(false);
+    setIsTestRunning(false);
+    toast({
+      title: "Conexión perdida",
+      description: "Se perdió la conexión con Arduino: " + error.error,
+      variant: "destructive"
+    });
   };
 
   const handleNewSkuSave = () => {
@@ -329,7 +417,7 @@ const QualityApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <AppHeader 
-          isConnected={isConnected}
+          isConnected={isConnected && serverConnected}
           onConnect={connectToArduino}
           onDisconnect={disconnectArduino}
         />
