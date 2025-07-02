@@ -17,7 +17,8 @@ import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
 import AppFooter from './AppFooter';
-import { arduinoService, ArduinoTestResult } from '@/services/arduinoService';
+import { ArduinoMessage, arduinoService, ArduinoTestResult } from '@/services/arduinoService';
+import ArduinoMessagesPanel from './ArduinoMessagesPanel';
 
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -45,6 +46,8 @@ const QualityApp = () => {
   const [activeTab, setActiveTab] = useState('testing');
   const [currentStandardPack, setCurrentStandardPack] = useState(10);
   const [serverConnected, setServerConnected] = useState(false);
+  const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
+  const [realTimeProcessing, setRealTimeProcessing] = useState(true);
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -106,8 +109,10 @@ const QualityApp = () => {
         await arduinoService.initializeSocket();
         setServerConnected(true);
         
-        // Configurar listeners
+        // Configurar listeners para CONTINUOS listening
         arduinoService.onTestResult(handleArduinoTestResult);
+        arduinoService.onArduinoMessage(handleArduinoMessage);
+        arduinoService.onArduinoInfo(handleArduinoInfo);
         arduinoService.onStatusChange(handleStatusChange);
         arduinoService.onConnectionLost(handleConnectionLost);
         
@@ -237,20 +242,59 @@ const QualityApp = () => {
     }
   };
 
-  const handleArduinoTestResult = (arduinoResult: ArduinoTestResult) => {
-    if (!testStartTime) return;
+  const handleArduinoMessage = (message: ArduinoMessage) => {
+    console.log('Mensaje Arduino recibido:', message);
+    
+    setArduinoMessages(prev => [...prev.slice(-99), message]); // Mantener últimos 100
+    
+    // Auto-actualizar SKU si el Arduino lo informa
+    if (message.type === 'SKU' && message.content !== currentSku) {
+      setCurrentSku(message.content);
+      toast({
+        title: "SKU Auto-detectado",
+        description: `SKU actualizado a: ${message.content}`,
+      });
+    }
+    
+    // Auto-actualizar operador si el Arduino lo informa
+    if (message.type === 'OPERATOR' && message.content !== currentOperator) {
+      setCurrentOperator(message.content);
+      toast({
+        title: "Operador Auto-detectado",
+        description: `Operador actualizado a: ${message.content}`,
+      });
+    }
+  };
 
-    const endTime = new Date();
-    const duration = arduinoResult.duration || (endTime.getTime() - testStartTime.getTime()) / 1000;
+  const handleArduinoInfo = (message: ArduinoMessage) => {
+    console.log('Info Arduino:', message);
+    // Mostrar notificaciones para mensajes importantes
+    if (message.content.toLowerCase().includes('iniciando')) {
+      toast({
+        title: "Arduino",
+        description: message.content,
+      });
+    }
+  };
+
+  const handleArduinoTestResult = (arduinoResult: ArduinoTestResult) => {
+    // PROCESAMIENTO CONTINUO - No depende de isTestRunning
+    if (!realTimeProcessing) return;
+    
+    console.log('Resultado de prueba recibido:', arduinoResult);
+    
+    const now = new Date();
+    const startTime = testStartTime || new Date(now.getTime() - 2000); // Default 2 seg atrás si no hay inicio
+    const duration = arduinoResult.duration || (now.getTime() - startTime.getTime()) / 1000;
 
     const newResult: TestResult = {
       id: Date.now().toString(),
-      sku: currentSku,
+      sku: currentSku || 'UNKNOWN',
       result: arduinoResult.result,
-      startTime: testStartTime,
-      endTime,
+      startTime,
+      endTime: now,
       duration,
-      operator: currentOperator,
+      operator: currentOperator || 'Arduino',
       date: getCurrentDateString()
     };
 
@@ -261,8 +305,11 @@ const QualityApp = () => {
       setOkCount(prev => prev + 1);
     }
 
-    setIsTestRunning(false);
-    setTestStartTime(null);
+    // Resetear estado de prueba si estaba corriendo
+    if (isTestRunning) {
+      setIsTestRunning(false);
+      setTestStartTime(null);
+    }
 
     if (!skuDatabase.find(sku => sku.codigo === currentSku)) {
       setCurrentNewSku(currentSku);
@@ -295,7 +342,7 @@ const QualityApp = () => {
       setShowErrorDialog(true);
     }
 
-    // Usar Standard Pack en lugar de valor fijo de 10
+    // Generar etiqueta automática cada N cables OK
     if (arduinoResult.result === 'OK' && (okCount + 1) % currentStandardPack === 0) {
       generateLabel();
     }
@@ -413,6 +460,38 @@ const QualityApp = () => {
     });
   };
 
+  const handleSendArduinoCommand = async (command: string) => {
+    try {
+      const result = await arduinoService.sendCommand(command);
+      if (result.success) {
+        toast({
+          title: "Comando enviado",
+          description: `Comando: ${command}`,
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: result.message,
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error enviando comando: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const clearArduinoMessages = () => {
+    setArduinoMessages([]);
+    toast({
+      title: "Mensajes limpiados",
+      description: "Se han eliminado todos los mensajes del Arduino",
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -427,21 +506,31 @@ const QualityApp = () => {
 
           <div className="p-6">
             {activeTab === 'testing' && (
-              <TestingTab
-                currentSku={currentSku}
-                setCurrentSku={setCurrentSku}
-                currentOperator={currentOperator}
-                setCurrentOperator={setCurrentOperator}
-                currentLote={currentLote}
-                isConnected={isConnected}
-                isTestRunning={isTestRunning}
-                onStartTest={startTest}
-                okCount={okCount}
-                totalProcessed={totalProcessed}
-                getCurrentDateString={getCurrentDateString}
-                getCurrentTimeString={getCurrentTimeString}
-                standardPack={currentStandardPack}
-              />
+              <div className="space-y-6">
+                <TestingTab
+                  currentSku={currentSku}
+                  setCurrentSku={setCurrentSku}
+                  currentOperator={currentOperator}
+                  setCurrentOperator={setCurrentOperator}
+                  currentLote={currentLote}
+                  isConnected={isConnected}
+                  isTestRunning={isTestRunning}
+                  onStartTest={startTest}
+                  okCount={okCount}
+                  totalProcessed={totalProcessed}
+                  getCurrentDateString={getCurrentDateString}
+                  getCurrentTimeString={getCurrentTimeString}
+                  standardPack={currentStandardPack}
+                />
+                
+                {/* Panel de Mensajes del Arduino en tiempo real */}
+                <ArduinoMessagesPanel
+                  messages={arduinoMessages}
+                  isConnected={isConnected && serverConnected}
+                  onSendCommand={handleSendArduinoCommand}
+                  onClearMessages={clearArduinoMessages}
+                />
+              </div>
             )}
 
             {activeTab === 'results' && (

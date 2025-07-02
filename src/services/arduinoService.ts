@@ -1,10 +1,16 @@
-
 import { io, Socket } from 'socket.io-client';
 
 export interface ArduinoTestResult {
   result: string;
   timestamp: string;
   duration: number;
+}
+
+export interface ArduinoMessage {
+  type: 'INFO' | 'STATUS' | 'RESULT' | 'SKU' | 'OPERATOR' | 'UNKNOWN';
+  content: string;
+  timestamp: string;
+  raw: string;
 }
 
 export interface ArduinoStatus {
@@ -119,10 +125,50 @@ class ArduinoService {
     return response.json();
   }
 
-  // Escuchar resultados de pruebas
+  // Enviar comando específico al Arduino
+  async sendCommand(command: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${this.baseURL}/api/send-command`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ command }),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Error enviando comando');
+    }
+    
+    return response.json();
+  }
+
+  // Obtener logs del Arduino
+  async getArduinoLogs(): Promise<ArduinoMessage[]> {
+    const response = await fetch(`${this.baseURL}/api/arduino-logs`);
+    if (!response.ok) {
+      throw new Error('Error obteniendo logs del Arduino');
+    }
+    return response.json();
+  }
+
+  // Escuchar resultados de pruebas (solo RESULT:)
   onTestResult(callback: (result: ArduinoTestResult) => void) {
     if (this.socket) {
       this.socket.on('test_result', callback);
+    }
+  }
+
+  // Escuchar TODOS los mensajes del Arduino
+  onArduinoMessage(callback: (message: ArduinoMessage) => void) {
+    if (this.socket) {
+      this.socket.on('arduino_message', callback);
+    }
+  }
+
+  // Escuchar mensajes informativos
+  onArduinoInfo(callback: (message: ArduinoMessage) => void) {
+    if (this.socket) {
+      this.socket.on('arduino_info', callback);
     }
   }
 

@@ -1,10 +1,11 @@
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { SerialPort } = require('serialport');
 const { ReadlineParser } = require('@serialport/parser-readline');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,10 +24,87 @@ let serialPort = null;
 let parser = null;
 let isConnected = false;
 let connectedClients = 0;
+let arduinoMessages = []; // Almacenar todos los mensajes
+let currentArduinoState = {
+  sku: '',
+  operator: '',
+  status: 'idle'
+};
 
 // Configuración del puerto serial
 const BAUD_RATE = 9600;
-const DATA_MAX_SIZE = 32;
+
+// Función para crear timestamp
+function getTimestamp() {
+  return new Date().toISOString();
+}
+
+// Función para parsear mensajes del Arduino
+function parseArduinoMessage(rawMessage) {
+  const timestamp = getTimestamp();
+  const message = rawMessage.trim();
+  
+  let type = 'UNKNOWN';
+  let content = message;
+  
+  if (message.startsWith('RESULT:')) {
+    type = 'RESULT';
+    content = message.substring(7).trim();
+  } else if (message.startsWith('SKU:')) {
+    type = 'SKU';
+    content = message.substring(4).trim();
+    currentArduinoState.sku = content;
+  } else if (message.startsWith('OPERATOR:')) {
+    type = 'OPERATOR';
+    content = message.substring(9).trim();
+    currentArduinoState.operator = content;
+  } else if (message.startsWith('INFO:')) {
+    type = 'INFO';
+    content = message.substring(5).trim();
+  } else if (message.startsWith('STATUS:')) {
+    type = 'STATUS';
+    content = message.substring(7).trim();
+    currentArduinoState.status = content;
+  }
+  
+  const parsedMessage = {
+    type,
+    content,
+    timestamp,
+    raw: message
+  };
+  
+  // Guardar mensaje en array
+  arduinoMessages.push(parsedMessage);
+  
+  // Mantener solo los últimos 1000 mensajes
+  if (arduinoMessages.length > 1000) {
+    arduinoMessages = arduinoMessages.slice(-1000);
+  }
+  
+  // Guardar en archivo de log
+  saveToLogFile(parsedMessage);
+  
+  return parsedMessage;
+}
+
+// Función para guardar en archivo de log
+function saveToLogFile(message) {
+  try {
+    const logDir = path.join(__dirname, 'logs');
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir);
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logDir, `arduino-log-${today}.json`);
+    
+    const logEntry = JSON.stringify(message) + '\n';
+    fs.appendFileSync(logFile, logEntry);
+  } catch (error) {
+    console.error('Error guardando log:', error);
+  }
+}
 
 // Función para encontrar puerto Arduino automáticamente
 async function findArduinoPort() {
@@ -93,14 +171,28 @@ async function connectToArduino() {
         
         // Configurar listeners
         parser.on('data', (data) => {
-          const message = data.toString().trim();
-          console.log('Datos del Arduino:', message);
+          const rawMessage = data.toString().trim();
+          console.log('Datos del Arduino:', rawMessage);
           
           // Parsear mensaje del Arduino
-          const testResult = parseArduinoMessage(message);
-          if (testResult) {
-            // Enviar resultado a todos los clientes conectados
+          const parsedMessage = parseArduinoMessage(rawMessage);
+          
+          // Enviar todos los mensajes a los clientes
+          io.emit('arduino_message', parsedMessage);
+          
+          // Si es un resultado, también enviarlo como test_result
+          if (parsedMessage.type === 'RESULT') {
+            const testResult = {
+              result: parsedMessage.content,
+              timestamp: parsedMessage.timestamp,
+              duration: 0
+            };
             io.emit('test_result', testResult);
+          }
+          
+          // Si es info, enviarlo como arduino_info
+          if (['INFO', 'STATUS'].includes(parsedMessage.type)) {
+            io.emit('arduino_info', parsedMessage);
           }
         });
 
@@ -147,25 +239,6 @@ function disconnectArduino() {
   return { success: false, message: 'No estaba conectado' };
 }
 
-// Parsear mensaje del Arduino
-function parseArduinoMessage(message) {
-  try {
-    // Esperamos formato: "RESULT:OK" o "RESULT:ERROR_CODE"
-    if (message.startsWith('RESULT:')) {
-      const result = message.substring(7).trim();
-      return {
-        result: result,
-        timestamp: new Date().toISOString(),
-        duration: 0 // El Arduino puede enviar duración si es necesario
-      };
-    }
-    return null;
-  } catch (error) {
-    console.error('Error parseando mensaje:', error);
-    return null;
-  }
-}
-
 // Enviar comando al Arduino
 function sendCommandToArduino(command) {
   if (!serialPort || !isConnected) {
@@ -191,7 +264,8 @@ app.get('/api/status', (req, res) => {
   res.json({
     connected: isConnected,
     clients: connectedClients,
-    timestamp: new Date().toISOString()
+    timestamp: getTimestamp(),
+    arduinoState: currentArduinoState
   });
 });
 
@@ -215,10 +289,37 @@ app.post('/api/start-test', (req, res) => {
     });
   }
 
-  // Enviar comando al Arduino para iniciar prueba
   const command = `START_TEST:${sku}:${operator}`;
   const result = sendCommandToArduino(command);
   res.json(result);
+});
+
+app.post('/api/send-command', (req, res) => {
+  const { command } = req.body;
+  
+  if (!command) {
+    return res.status(400).json({
+      success: false,
+      message: 'Comando es requerido'
+    });
+  }
+
+  const result = sendCommandToArduino(command);
+  res.json(result);
+});
+
+app.get('/api/arduino-logs', (req, res) => {
+  const { limit = 100, type } = req.query;
+  
+  let filteredMessages = arduinoMessages;
+  
+  if (type && type !== 'ALL') {
+    filteredMessages = arduinoMessages.filter(msg => msg.type === type);
+  }
+  
+  const limitedMessages = filteredMessages.slice(-parseInt(limit));
+  
+  res.json(limitedMessages);
 });
 
 // WebSocket para comunicación en tiempo real
@@ -254,6 +355,8 @@ server.listen(PORT, () => {
   console.log('  POST /api/connect');
   console.log('  POST /api/disconnect');
   console.log('  POST /api/start-test');
+  console.log('  POST /api/send-command');
+  console.log('  GET  /api/arduino-logs');
   console.log('WebSocket: ws://localhost:' + PORT);
 });
 
