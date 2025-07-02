@@ -1,22 +1,24 @@
 
-// Arduino Mega - Sistema Híbrido para Control de Calidad
-// Maneja tanto botón físico como comandos desde la aplicación
+// Arduino Mega - Sistema Híbrido de Control de Calidad
+// Modo 1: Botón físico para secuencias automáticas (12 pruebas consecutivas)
+// Modo 2: Comandos desde app para pruebas individuales
 
 // Configuración de pines
 const int BUTTON_PIN = 2;  // Pin del botón (usa pull-up interno)
 const int LED_PIN = 13;    // LED integrado para indicar actividad
 
-// Variables de control
+// Variables de control del botón físico
 bool buttonPressed = false;
 bool testRunning = false;
 int currentTest = 0;
 const int TOTAL_TESTS = 12;
 unsigned long previousMillis = 0;
-const unsigned long TEST_INTERVAL = 5000;  // 5 segundos
+const unsigned long TEST_INTERVAL = 3000;  // 3 segundos entre pruebas
 
-// Estado del sistema
-String currentSKU = "TEST-SKU";
-String currentOperator = "Arduino";
+// Variables del sistema
+String currentSKU = "1234";           // SKU por defecto
+String currentOperator = "Operador";  // Operador por defecto
+bool systemInitialized = false;      // Control de inicialización
 
 // Array con los mensajes de prueba (10 OK + 2 Error)
 String testMessages[TOTAL_TESTS] = {
@@ -44,19 +46,19 @@ void setup() {
   
   digitalWrite(LED_PIN, LOW);
   
-  // Mensaje inicial
-  Serial.println("INFO:Sistema de Control de Calidad iniciado");
-  Serial.println("SKU:" + currentSKU);
-  Serial.println("OPERATOR:" + currentOperator);
-  Serial.println("STATUS:Listo para pruebas");
+  // Esperar estabilización y enviar datos iniciales UNA SOLA VEZ
+  delay(2000);
+  sendInitialData();
 }
 
 void loop() {
   // Verificar comandos del puerto serial
   checkSerialCommands();
   
-  // Verificar si se presionó el botón físico
-  checkButton();
+  // Verificar si se presionó el botón físico (solo si no hay prueba corriendo)
+  if (!testRunning) {
+    checkButton();
+  }
   
   // Ejecutar secuencia de pruebas si está activa
   if (testRunning) {
@@ -64,71 +66,115 @@ void loop() {
   }
 }
 
+void sendInitialData() {
+  if (!systemInitialized) {
+    Serial.println("INFO:Sistema Arduino iniciado");
+    Serial.println("SKU:" + currentSKU);
+    Serial.println("OPERATOR:" + currentOperator);
+    Serial.println("STATUS:Listo para recibir comandos");
+    systemInitialized = true;
+  }
+}
+
 void checkSerialCommands() {
-  if (Serial.available()) {
+  if (Serial.available() > 0) {
     String command = Serial.readStringUntil('\n');
     command.trim();
     
     if (command.startsWith("START_TEST:")) {
       handleStartTestCommand(command);
-    } else if (command == "GET_STATUS") {
+    }
+    else if (command.equals("GET_STATUS")) {
       handleGetStatusCommand();
-    } else if (command.startsWith("SET_SKU:")) {
+    }
+    else if (command.startsWith("SET_SKU:")) {
       handleSetSKUCommand(command);
-    } else if (command == "STOP_TEST") {
+    }
+    else if (command.startsWith("SET_OPERATOR:")) {
+      handleSetOperatorCommand(command);
+    }
+    else if (command.equals("STOP_TEST")) {
       handleStopTestCommand();
+    }
+    else {
+      Serial.println("INFO:Comando no reconocido: " + command);
     }
   }
 }
 
 void handleStartTestCommand(String command) {
-  // Parsear comando: START_TEST:SKU:OPERATOR
-  int firstColon = command.indexOf(':', 0);
+  // Formato: START_TEST:SKU:OPERATOR
+  Serial.println("INFO:Comando START_TEST recibido");
+  
+  // Parsear SKU y Operador del comando
+  int firstColon = command.indexOf(':');
   int secondColon = command.indexOf(':', firstColon + 1);
   
-  if (firstColon != -1 && secondColon != -1) {
-    currentSKU = command.substring(firstColon + 1, secondColon);
-    currentOperator = command.substring(secondColon + 1);
+  if (firstColon > 0 && secondColon > firstColon) {
+    String sku = command.substring(firstColon + 1, secondColon);
+    String operatorName = command.substring(secondColon + 1);
     
-    Serial.println("SKU:" + currentSKU);
-    Serial.println("OPERATOR:" + currentOperator);
+    // Actualizar variables solo si son diferentes
+    if (sku != currentSKU) {
+      currentSKU = sku;
+      Serial.println("SKU:" + currentSKU);
+    }
+    if (operatorName != currentOperator) {
+      currentOperator = operatorName;
+      Serial.println("OPERATOR:" + currentOperator);
+    }
   }
   
-  Serial.println("INFO:Comando START_TEST recibido");
+  // Ejecutar UNA sola prueba simulada (MODO APP)
   Serial.println("STATUS:Ejecutando prueba individual");
+  digitalWrite(LED_PIN, HIGH);
   
-  // Simular una prueba individual (no secuencia completa)
-  delay(1000);  // Simular tiempo de prueba
+  // Simular tiempo de prueba
+  delay(1000);
   
-  // Enviar resultado aleatorio (90% OK, 10% Error)
-  if (random(100) < 90) {
-    Serial.println("RESULT:OK");
-  } else {
-    Serial.println("RESULT:Error 1");
-  }
+  // Enviar resultado simulado (80% OK, 20% Error)
+  String result = (random(100) < 80) ? "RESULT:OK" : "RESULT:Error 1";
+  Serial.println(result);
   
-  Serial.println("STATUS:Prueba completada");
+  digitalWrite(LED_PIN, LOW);
+  Serial.println("STATUS:Prueba individual completada");
 }
 
 void handleGetStatusCommand() {
+  Serial.println("STATUS:" + String(testRunning ? "Secuencia activa" : "Listo"));
   Serial.println("SKU:" + currentSKU);
   Serial.println("OPERATOR:" + currentOperator);
-  Serial.println("STATUS:" + (testRunning ? "Ejecutando secuencia" : "Listo"));
-  Serial.println("INFO:Estado enviado");
+  Serial.println("INFO:Pruebas pendientes: " + String(testRunning ? (TOTAL_TESTS - currentTest) : 0));
 }
 
 void handleSetSKUCommand(String command) {
-  int colonIndex = command.indexOf(':');
-  if (colonIndex != -1) {
-    currentSKU = command.substring(colonIndex + 1);
-    Serial.println("SKU:" + currentSKU);
-    Serial.println("INFO:SKU actualizado");
+  int colonPos = command.indexOf(':');
+  if (colonPos > 0) {
+    String newSKU = command.substring(colonPos + 1);
+    if (newSKU != currentSKU) {
+      currentSKU = newSKU;
+      Serial.println("SKU:" + currentSKU);
+      Serial.println("INFO:SKU actualizado correctamente");
+    }
+  }
+}
+
+void handleSetOperatorCommand(String command) {
+  int colonPos = command.indexOf(':');
+  if (colonPos > 0) {
+    String newOperator = command.substring(colonPos + 1);
+    if (newOperator != currentOperator) {
+      currentOperator = newOperator;
+      Serial.println("OPERATOR:" + currentOperator);
+      Serial.println("INFO:Operador actualizado correctamente");
+    }
   }
 }
 
 void handleStopTestCommand() {
   if (testRunning) {
     testRunning = false;
+    currentTest = 0;
     digitalWrite(LED_PIN, LOW);
     Serial.println("INFO:Secuencia de pruebas detenida");
     Serial.println("STATUS:Listo");
@@ -140,9 +186,9 @@ void checkButton() {
   bool currentButtonState = !digitalRead(BUTTON_PIN);
   
   // Detectar flanco de subida (botón presionado)
-  if (currentButtonState && !buttonPressed && !testRunning) {
+  if (currentButtonState && !buttonPressed) {
     buttonPressed = true;
-    startButtonSequence();
+    startPhysicalButtonSequence();
   }
   
   // Resetear flag cuando se suelta el botón
@@ -151,10 +197,9 @@ void checkButton() {
   }
 }
 
-void startButtonSequence() {
-  Serial.println("INFO:Botón físico presionado");
-  Serial.println("STATUS:Iniciando secuencia de 12 pruebas");
-  Serial.println("SKU:" + currentSKU);
+void startPhysicalButtonSequence() {
+  Serial.println("INFO:Botón físico presionado - Iniciando secuencia");
+  Serial.println("STATUS:Secuencia de 12 pruebas iniciada");
   
   testRunning = true;
   currentTest = 0;
@@ -163,21 +208,21 @@ void startButtonSequence() {
   // Encender LED para indicar que las pruebas están corriendo
   digitalWrite(LED_PIN, HIGH);
   
-  // Enviar primer mensaje inmediatamente
-  sendTestMessage();
+  // Enviar primer resultado inmediatamente
+  sendTestResult();
 }
 
 void runTestSequence() {
   unsigned long currentMillis = millis();
   
-  // Verificar si han pasado 5 segundos
+  // Verificar si han pasado los segundos necesarios
   if (currentMillis - previousMillis >= TEST_INTERVAL) {
     previousMillis = currentMillis;
     currentTest++;
     
     // Verificar si aún hay pruebas pendientes
     if (currentTest < TOTAL_TESTS) {
-      sendTestMessage();
+      sendTestResult();
     } else {
       // Finalizar secuencia de pruebas
       endTestSequence();
@@ -185,21 +230,23 @@ void runTestSequence() {
   }
 }
 
-void sendTestMessage() {
-  Serial.println("STATUS:Prueba " + String(currentTest + 1) + "/" + String(TOTAL_TESTS));
-  Serial.println(testMessages[currentTest]);
-  
+void sendTestResult() {
   // Parpadear LED para indicar envío
   digitalWrite(LED_PIN, LOW);
   delay(100);
   digitalWrite(LED_PIN, HIGH);
+  
+  // Enviar información de estado y resultado
+  Serial.println("STATUS:Prueba " + String(currentTest + 1) + "/" + String(TOTAL_TESTS));
+  Serial.println(testMessages[currentTest]);
 }
 
 void endTestSequence() {
+  Serial.println("STATUS:Secuencia completada");
+  Serial.println("INFO:12 pruebas finalizadas - Sistema listo");
+  
+  // Apagar LED y resetear variables
   digitalWrite(LED_PIN, LOW);
   testRunning = false;
   currentTest = 0;
-  
-  Serial.println("INFO:Secuencia de 12 pruebas completada");
-  Serial.println("STATUS:Listo para nueva secuencia");
 }

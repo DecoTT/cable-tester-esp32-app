@@ -247,22 +247,28 @@ const QualityApp = () => {
     
     setArduinoMessages(prev => [...prev.slice(-99), message]); // Mantener últimos 100
     
-    // Auto-actualizar SKU si el Arduino lo informa
-    if (message.type === 'SKU' && message.content !== currentSku) {
+    // Auto-actualizar SKU si el Arduino lo informa (solo si es diferente y no vacío)
+    if (message.type === 'SKU' && message.content && message.content !== currentSku) {
       setCurrentSku(message.content);
-      toast({
-        title: "SKU Auto-detectado",
-        description: `SKU actualizado a: ${message.content}`,
-      });
+      // Solo mostrar toast si es un cambio significativo, no al inicio
+      if (currentSku) {
+        toast({
+          title: "SKU Auto-detectado",
+          description: `SKU actualizado a: ${message.content}`,
+        });
+      }
     }
     
-    // Auto-actualizar operador si el Arduino lo informa
-    if (message.type === 'OPERATOR' && message.content !== currentOperator) {
+    // Auto-actualizar operador si el Arduino lo informa (solo si es diferente y no vacío)
+    if (message.type === 'OPERATOR' && message.content && message.content !== currentOperator) {
       setCurrentOperator(message.content);
-      toast({
-        title: "Operador Auto-detectado",
-        description: `Operador actualizado a: ${message.content}`,
-      });
+      // Solo mostrar toast si es un cambio significativo, no al inicio
+      if (currentOperator && currentOperator !== 'Arduino') {
+        toast({
+          title: "Operador Auto-detectado",
+          description: `Operador actualizado a: ${message.content}`,
+        });
+      }
     }
   };
 
@@ -305,13 +311,12 @@ const QualityApp = () => {
       setOkCount(prev => prev + 1);
     }
 
-    // Resetear estado de prueba si estaba corriendo
-    if (isTestRunning) {
-      setIsTestRunning(false);
-      setTestStartTime(null);
-    }
+    // SIEMPRE resetear estado de prueba al recibir cualquier resultado
+    setIsTestRunning(false);
+    setTestStartTime(null);
 
-    if (!skuDatabase.find(sku => sku.codigo === currentSku)) {
+    // Verificar si el SKU existe en la base de datos
+    if (currentSku && !skuDatabase.find(sku => sku.codigo === currentSku)) {
       setCurrentNewSku(currentSku);
       setShowNewSkuDialog(true);
     }
