@@ -327,8 +327,8 @@ const QualityApp = () => {
       setShowNewSkuDialog(true);
     }
 
-    // Verificar si el código ya existe en la DB de códigos
-    if (!codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result)) {
+    // Verificar si el código ya existe en la DB de códigos SOLO si la DB ya está cargada
+    if (isDatabaseLoaded && !codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result)) {
       const newCodigo: CodigoGlobal = {
         codigo: arduinoResult.result,
         descripcion: '',
