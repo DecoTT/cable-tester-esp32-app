@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Printer, Package, Calendar, Hash, QrCode } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Lote } from '@/types';
+import { printLabels } from '@/utils/printUtils';
 
 interface LabelGeneratorProps {
   currentSku: string;
@@ -13,6 +14,7 @@ interface LabelGeneratorProps {
   okCount: number;
   loteDatabase: Lote[];
   standardPack: number;
+  onGeneratePartial: (count: number) => void;
 }
 
 const LabelGenerator: React.FC<LabelGeneratorProps> = ({ 
@@ -20,7 +22,8 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   currentLote, 
   okCount,
   loteDatabase,
-  standardPack
+  standardPack,
+  onGeneratePartial
 }) => {
   const [manualQty, setManualQty] = useState(standardPack.toString());
   const [customSku, setCustomSku] = useState(currentSku);
@@ -47,14 +50,21 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       return;
     }
 
-    const qrData = generateQRData(currentSku, getCurrentDateString(), standardPack.toString(), currentLote);
+    const labelsToGenerate = [
+      {
+        sku: currentSku,
+        date: getCurrentDateString(),
+        qty: standardPack.toString(),
+        lote: currentLote
+      }
+    ];
+
+    printLabels(labelsToGenerate);
     
     toast({
       title: "Etiqueta generada automáticamente",
       description: `Etiqueta para ${currentSku} - Lote ${currentLote} - ${standardPack} unidades`,
     });
-
-    console.log('QR/DataMatrix data:', qrData);
   };
 
   const generateManualLabel = () => {
@@ -67,14 +77,21 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       return;
     }
 
-    const qrData = generateQRData(customSku, getCurrentDateString(), manualQty, customLote);
+    const labelsToGenerate = [
+      {
+        sku: customSku,
+        date: getCurrentDateString(),
+        qty: manualQty,
+        lote: customLote
+      }
+    ];
+
+    printLabels(labelsToGenerate);
     
     toast({
       title: "Etiqueta generada manualmente",
       description: `Etiqueta para ${customSku} - Lote ${customLote} - ${manualQty} unidades`,
     });
-
-    console.log('QR/DataMatrix data:', qrData);
   };
 
   const printPairs = () => {
@@ -88,15 +105,27 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       return;
     }
 
-    const qrData1 = generateQRData(currentSku, getCurrentDateString(), standardPack.toString(), currentLote);
-    const qrData2 = generateQRData(currentSku, getCurrentDateString(), standardPack.toString(), currentLote);
+    const labelsToGenerate = [
+      {
+        sku: currentSku,
+        date: getCurrentDateString(),
+        qty: standardPack.toString(),
+        lote: currentLote
+      },
+      {
+        sku: currentSku,
+        date: getCurrentDateString(),
+        qty: standardPack.toString(),
+        lote: currentLote
+      }
+    ];
+
+    printLabels(labelsToGenerate);
     
     toast({
-      title: "Par de etiquetas generado",
+      title: "Par de etiquetas impresas",
       description: `2 etiquetas para ${currentSku} - Lote ${currentLote} (${standardPack} c/u)`,
     });
-
-    console.log('Par de etiquetas:', { qrData1, qrData2 });
   };
 
   const printPartial = () => {
@@ -110,14 +139,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       return;
     }
 
-    const qrData = generateQRData(currentSku, getCurrentDateString(), partialCount.toString(), currentLote);
-    
-    toast({
-      title: "Etiqueta parcial generada",
-      description: `Etiqueta parcial para ${currentSku} - ${partialCount} unidades`,
-    });
-
-    console.log('Etiqueta parcial:', qrData);
+    onGeneratePartial(partialCount);
   };
 
   // Vista previa de etiqueta
@@ -145,7 +167,9 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       {/* Header */}
       <div>
         <h2 className="text-2xl font-bold">Generador de Etiquetas</h2>
-        <p className="text-gray-600">Genera etiquetas cada {standardPack} cables OK según Standard Pack del SKU</p>
+        <p className="text-gray-600">
+          Imprime automáticamente 2 etiquetas cada {standardPack * 2} cables OK ({standardPack} c/u)
+        </p>
       </div>
 
       {/* Statistics */}
@@ -167,8 +191,10 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
             <div className="flex items-center">
               <Printer className="w-8 h-8 text-green-500" />
               <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Próxima Etiqueta</p>
-                <p className="text-2xl font-bold text-green-600">{standardPack - (okCount % standardPack)}</p>
+                <p className="text-sm font-medium text-gray-600">Para Imprimir</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {(standardPack * 2) - (okCount % (standardPack * 2))}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -205,13 +231,13 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Printer className="w-5 h-5" />
-              <span>Generación Automática</span>
+              <span>Impresión Automática</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <p className="text-sm text-gray-600">
-                Se genera automáticamente cada {standardPack} cables OK
+                Se imprime automáticamente cada {standardPack * 2} cables OK (2 etiquetas de {standardPack} c/u)
               </p>
               <div className="flex items-center space-x-2">
                 <Badge variant="outline">SKU: {currentSku || 'No definido'}</Badge>
@@ -227,7 +253,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
                 className="w-full"
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Generar Etiqueta ({standardPack} unidades)
+                Imprimir Etiqueta ({standardPack} unidades)
               </Button>
               
               <Button 
@@ -247,14 +273,14 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
                 className="w-full"
               >
                 <Printer className="w-4 h-4 mr-2" />
-                Cerrar Parcial ({okCount % standardPack} unidades)
+                Imprimir Parcial ({okCount % standardPack} unidades)
               </Button>
             </div>
 
-            {okCount >= standardPack && (
+            {okCount >= standardPack * 2 && okCount % (standardPack * 2) === 0 && (
               <div className="bg-green-50 p-3 rounded-lg">
                 <p className="text-sm text-green-600 font-medium">
-                  ✓ Listo para generar etiqueta automática
+                  ✓ Próxima impresión automática en {(standardPack * 2) - (okCount % (standardPack * 2))} cables
                 </p>
               </div>
             )}

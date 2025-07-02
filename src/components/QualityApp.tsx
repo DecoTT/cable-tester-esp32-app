@@ -19,6 +19,7 @@ import OperatorManager from './OperatorManager';
 import AppFooter from './AppFooter';
 import { ArduinoMessage, arduinoService, ArduinoTestResult } from '@/services/arduinoService';
 import ArduinoMessagesPanel from './ArduinoMessagesPanel';
+import { printLabels, incrementLote } from '@/utils/printUtils';
 
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -353,8 +354,8 @@ const QualityApp = () => {
       setShowErrorDialog(true);
     }
 
-    // Generar etiqueta automática cada N cables OK
-    if (arduinoResult.result === 'OK' && (okCount + 1) % currentStandardPack === 0) {
+    // Imprimir etiquetas automáticamente cada SP x 2 (20 cables OK)
+    if (arduinoResult.result === 'OK' && (okCount + 1) % (currentStandardPack * 2) === 0) {
       generateLabel();
     }
   };
@@ -402,17 +403,36 @@ const QualityApp = () => {
   };
 
   const generateLabel = () => {
+    const labelsToGenerate = [
+      {
+        sku: currentSku,
+        date: getCurrentDateString(),
+        qty: currentStandardPack.toString(),
+        lote: currentLote
+      },
+      {
+        sku: currentSku,
+        date: getCurrentDateString(),
+        qty: currentStandardPack.toString(),
+        lote: currentLote
+      }
+    ];
+
+    // Imprimir automáticamente
+    printLabels(labelsToGenerate);
+    
     toast({
-      title: "Etiqueta generada",
-      description: `Etiqueta automática para lote ${currentLote} - ${currentStandardPack} cables OK`,
+      title: "Etiquetas impresas automáticamente",
+      description: `2 etiquetas para lote ${currentLote} - ${currentStandardPack * 2} cables OK total`,
     });
     
+    // Registrar lote completo
     const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
     
     if (existingLote) {
       setLoteDatabase(prev => prev.map(l => 
         l.id === currentLote && l.sku === currentSku 
-          ? { ...l, cantidad: l.cantidad + currentStandardPack, buenos: l.buenos + currentStandardPack, procesados: totalProcessed }
+          ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: totalProcessed + 1 }
           : l
       ));
     } else {
@@ -421,13 +441,51 @@ const QualityApp = () => {
         sku: currentSku,
         fecha: getCurrentDateString(),
         operador: currentOperator,
-        cantidad: currentStandardPack,
-        buenos: currentStandardPack,
-        malos: totalProcessed - okCount,
-        procesados: totalProcessed
+        cantidad: currentStandardPack * 2,
+        buenos: currentStandardPack * 2,
+        malos: 0,
+        procesados: currentStandardPack * 2
       };
       setLoteDatabase(prev => [...prev, newLote]);
     }
+
+    // Auto-incrementar lote para el siguiente
+    setCurrentLote(incrementLote(currentLote));
+  };
+
+  const generatePartialLabel = (partialCount: number) => {
+    const newLoteId = incrementLote(currentLote);
+    
+    const partialLabel = {
+      sku: currentSku,
+      date: getCurrentDateString(),
+      qty: partialCount.toString(),
+      lote: newLoteId
+    };
+
+    // Imprimir etiqueta parcial
+    printLabels([partialLabel]);
+    
+    // Registrar lote parcial
+    const partialLote: Lote = {
+      id: newLoteId,
+      sku: currentSku,
+      fecha: getCurrentDateString(),
+      operador: currentOperator,
+      cantidad: partialCount,
+      buenos: partialCount,
+      malos: 0,
+      procesados: partialCount
+    };
+    setLoteDatabase(prev => [...prev, partialLote]);
+    
+    toast({
+      title: "Etiqueta parcial impresa",
+      description: `Etiqueta parcial para lote ${newLoteId} - ${partialCount} unidades`,
+    });
+
+    // Actualizar lote actual
+    setCurrentLote(incrementLote(newLoteId));
   };
 
   const exportLogs = () => {
@@ -571,6 +629,7 @@ const QualityApp = () => {
                 okCount={okCount}
                 loteDatabase={loteDatabase}
                 standardPack={currentStandardPack}
+                onGeneratePartial={generatePartialLabel}
               />
             )}
 
