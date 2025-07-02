@@ -48,6 +48,7 @@ const QualityApp = () => {
   const [serverConnected, setServerConnected] = useState(false);
   const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
+  const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -63,6 +64,11 @@ const QualityApp = () => {
     if (savedResults) setTestResults(JSON.parse(savedResults));
     if (savedOperator) setCurrentOperator(savedOperator);
     if (savedLogFormat) setLogFormat(savedLogFormat as 'csv' | 'json' | 'txt');
+    
+    // Marcar que la base de datos ya se cargó
+    setTimeout(() => {
+      setIsDatabaseLoaded(true);
+    }, 100); // Pequeño delay para asegurar que todos los datos estén cargados
   }, []);
 
   useEffect(() => {
@@ -315,8 +321,8 @@ const QualityApp = () => {
     setIsTestRunning(false);
     setTestStartTime(null);
 
-    // Verificar si el SKU existe en la base de datos
-    if (currentSku && !skuDatabase.find(sku => sku.codigo === currentSku)) {
+    // Verificar si el SKU existe en la base de datos SOLO si la DB ya está cargada
+    if (isDatabaseLoaded && currentSku && !skuDatabase.find(sku => sku.codigo === currentSku)) {
       setCurrentNewSku(currentSku);
       setShowNewSkuDialog(true);
     }

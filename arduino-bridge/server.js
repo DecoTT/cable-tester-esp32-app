@@ -159,14 +159,16 @@ async function connectToArduino() {
 
     serialPort = new SerialPort({
       path: portPath,
-      baudRate: BAUD_RATE
+      baudRate: BAUD_RATE,
+      dtr: false,  // Deshabilitar DTR para evitar reset del Arduino
+      rts: false   // Deshabilitar RTS para evitar reset del Arduino
     });
 
     parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
 
     return new Promise((resolve, reject) => {
       serialPort.on('open', () => {
-        console.log('Puerto serial abierto');
+        console.log('Puerto serial abierto sin resetear Arduino');
         isConnected = true;
         
         // Configurar listeners
