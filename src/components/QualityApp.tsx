@@ -50,7 +50,6 @@ const QualityApp = () => {
   const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
-  // Nuevo: Set para rastrear códigos vistos inmediatamente (evita duplicados)
   const seenCodigosRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -65,7 +64,6 @@ const QualityApp = () => {
     if (savedCodigos) {
       const loadedCodigos = JSON.parse(savedCodigos);
       setCodigosDatabase(loadedCodigos);
-      // Poblar el Set con códigos existentes
       seenCodigosRef.current = new Set(loadedCodigos.map((c: CodigoGlobal) => c.codigo));
     }
     if (savedLotes) setLoteDatabase(JSON.parse(savedLotes));
@@ -73,10 +71,9 @@ const QualityApp = () => {
     if (savedOperator) setCurrentOperator(savedOperator);
     if (savedLogFormat) setLogFormat(savedLogFormat as 'csv' | 'json' | 'txt');
     
-    // Marcar que la base de datos ya se cargó
     setTimeout(() => {
       setIsDatabaseLoaded(true);
-    }, 100); // Pequeño delay para asegurar que todos los datos estén cargados
+    }, 100);
   }, []);
 
   useEffect(() => {
@@ -111,19 +108,17 @@ const QualityApp = () => {
       if (sku) {
         setCurrentStandardPack(sku.standardPack || 10);
       } else {
-        setCurrentStandardPack(10); // Default para SKUs nuevos
+        setCurrentStandardPack(10);
       }
     }
   }, [currentSku, skuDatabase]);
 
   useEffect(() => {
-    // Inicializar conexión con el servidor Arduino Bridge
     const initializeArduinoService = async () => {
       try {
         await arduinoService.initializeSocket();
         setServerConnected(true);
         
-        // Configurar listeners para CONTINUOS listening
         arduinoService.onTestResult(handleArduinoTestResult);
         arduinoService.onArduinoMessage(handleArduinoMessage);
         arduinoService.onArduinoInfo(handleArduinoInfo);
@@ -259,12 +254,10 @@ const QualityApp = () => {
   const handleArduinoMessage = (message: ArduinoMessage) => {
     console.log('Mensaje Arduino recibido:', message);
     
-    setArduinoMessages(prev => [...prev.slice(-99), message]); // Mantener últimos 100
+    setArduinoMessages(prev => [...prev.slice(-99), message]);
     
-    // Auto-actualizar SKU si el Arduino lo informa (solo si es diferente y no vacío)
     if (message.type === 'SKU' && message.content && message.content !== currentSku) {
       setCurrentSku(message.content);
-      // Solo mostrar toast si es un cambio significativo, no al inicio
       if (currentSku) {
         toast({
           title: "SKU Auto-detectado",
@@ -273,10 +266,8 @@ const QualityApp = () => {
       }
     }
     
-    // Auto-actualizar operador si el Arduino lo informa (solo si es diferente y no vacío)
     if (message.type === 'OPERATOR' && message.content && message.content !== currentOperator) {
       setCurrentOperator(message.content);
-      // Solo mostrar toast si es un cambio significativo, no al inicio
       if (currentOperator && currentOperator !== 'Arduino') {
         toast({
           title: "Operador Auto-detectado",
@@ -288,7 +279,6 @@ const QualityApp = () => {
 
   const handleArduinoInfo = (message: ArduinoMessage) => {
     console.log('Info Arduino:', message);
-    // Mostrar notificaciones para mensajes importantes
     if (message.content.toLowerCase().includes('iniciando')) {
       toast({
         title: "Arduino",
@@ -297,14 +287,13 @@ const QualityApp = () => {
     }
   };
 
-  const handleArduinoTestResult = (arduinoResult: ArduinoTestResult) => {
-    // PROCESAMIENTO CONTINUO - No depende de isTestRunning
+  const handleArduinoTestResult = async (arduinoResult: ArduinoTestResult) => {
     if (!realTimeProcessing) return;
     
     console.log('Resultado de prueba recibido:', arduinoResult);
     
     const now = new Date();
-    const startTime = testStartTime || new Date(now.getTime() - 2000); // Default 2 seg atrás si no hay inicio
+    const startTime = testStartTime || new Date(now.getTime() - 2000);
     const duration = arduinoResult.duration || (now.getTime() - startTime.getTime()) / 1000;
 
     const newResult: TestResult = {
@@ -325,21 +314,17 @@ const QualityApp = () => {
       setOkCount(prev => prev + 1);
     }
 
-    // SIEMPRE resetear estado de prueba al recibir cualquier resultado
     setIsTestRunning(false);
     setTestStartTime(null);
 
-    // Verificar si el SKU existe en la base de datos SOLO si la DB ya está cargada
     if (isDatabaseLoaded && currentSku && !skuDatabase.find(sku => sku.codigo === currentSku)) {
       setCurrentNewSku(currentSku);
       setShowNewSkuDialog(true);
     }
 
-    // SOLUCIÓN DEFINITIVA: Verificar códigos usando Set inmediato + base de datos
     if (isDatabaseLoaded && !seenCodigosRef.current.has(arduinoResult.result)) {
       console.log(`Nuevo código detectado: ${arduinoResult.result}, agregando inmediatamente al Set y DB`);
       
-      // Agregar inmediatamente al Set para prevenir duplicados
       seenCodigosRef.current.add(arduinoResult.result);
       
       const newCodigo: CodigoGlobal = {
@@ -349,10 +334,8 @@ const QualityApp = () => {
         fechaCreacion: getCurrentDateString()
       };
       
-      // Agregar a la base de datos de códigos
       setCodigosDatabase(prev => [...prev, newCodigo]);
       
-      // Solo mostrar diálogo para códigos que no sean 'OK'
       if (arduinoResult.result !== 'OK') {
         setCurrentNewCodigo(newCodigo);
         setShowNewCodigoDialog(true);
@@ -371,9 +354,9 @@ const QualityApp = () => {
       setShowErrorDialog(true);
     }
 
-    // Imprimir etiquetas automáticamente cada SP x 2 (20 cables OK)
     if (arduinoResult.result === 'OK' && (okCount + 1) % (currentStandardPack * 2) === 0) {
-      generateLabel();
+      console.log(`Alcanzado ${currentStandardPack * 2} cables OK, imprimiendo etiquetas automáticamente...`);
+      await generateLabel();
     }
   };
 
@@ -396,7 +379,7 @@ const QualityApp = () => {
       codigo: currentNewSku,
       descripcion: tempSkuDescription,
       fechaCreacion: getCurrentDateString(),
-      standardPack: 10 // Default SP para SKUs nuevos
+      standardPack: 10
     };
     setSkuDatabase(prev => [...prev, newSku]);
     setCurrentStandardPack(10);
@@ -413,7 +396,6 @@ const QualityApp = () => {
           : codigo
       ));
       
-      // Asegurar que el código esté en el Set (aunque ya debería estar)
       seenCodigosRef.current.add(currentNewCodigo.codigo);
     }
     setShowNewCodigoDialog(false);
@@ -438,8 +420,30 @@ const QualityApp = () => {
       }
     ];
 
+    const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
+    
+    if (existingLote) {
+      setLoteDatabase(prev => prev.map(l => 
+        l.id === currentLote && l.sku === currentSku 
+          ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: l.procesados + (currentStandardPack * 2) }
+          : l
+      ));
+    } else {
+      const newLote: Lote = {
+        id: currentLote,
+        sku: currentSku,
+        fecha: getCurrentDateString(),
+        operador: currentOperator,
+        cantidad: currentStandardPack * 2,
+        buenos: currentStandardPack * 2,
+        malos: 0,
+        procesados: currentStandardPack * 2
+      };
+      setLoteDatabase(prev => [...prev, newLote]);
+      console.log('Lote registrado:', newLote);
+    }
+
     try {
-      // Imprimir automáticamente usando el servidor
       await printLabels(labelsToGenerate);
       
       toast({
@@ -447,39 +451,16 @@ const QualityApp = () => {
         description: `2 etiquetas para lote ${currentLote} - ${currentStandardPack * 2} cables OK total`,
       });
       
-      // Registrar lote completo
-      const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
-      
-      if (existingLote) {
-        setLoteDatabase(prev => prev.map(l => 
-          l.id === currentLote && l.sku === currentSku 
-            ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: totalProcessed + 1 }
-            : l
-        ));
-      } else {
-        const newLote: Lote = {
-          id: currentLote,
-          sku: currentSku,
-          fecha: getCurrentDateString(),
-          operador: currentOperator,
-          cantidad: currentStandardPack * 2,
-          buenos: currentStandardPack * 2,
-          malos: 0,
-          procesados: currentStandardPack * 2
-        };
-        setLoteDatabase(prev => [...prev, newLote]);
-      }
-
-      // Auto-incrementar lote para el siguiente
-      setCurrentLote(incrementLote(currentLote));
-      
     } catch (error) {
+      console.error('Error imprimiendo etiquetas:', error);
       toast({
-        title: "Error de impresión",
-        description: "No se pudieron imprimir las etiquetas: " + (error as Error).message,
+        title: "Lote registrado - Error de impresión",
+        description: `Lote ${currentLote} registrado correctamente. Error: ${(error as Error).message}`,
         variant: "destructive"
       });
     }
+
+    setCurrentLote(incrementLote(currentLote));
   };
 
   const generatePartialLabel = async (partialCount: number) => {
@@ -492,38 +473,36 @@ const QualityApp = () => {
       lote: newLoteId
     };
 
+    const partialLote: Lote = {
+      id: newLoteId,
+      sku: currentSku,
+      fecha: getCurrentDateString(),
+      operador: currentOperator,
+      cantidad: partialCount,
+      buenos: partialCount,
+      malos: 0,
+      procesados: partialCount
+    };
+    setLoteDatabase(prev => [...prev, partialLote]);
+    console.log('Lote parcial registrado:', partialLote);
+
     try {
-      // Imprimir etiqueta parcial usando el servidor
       await printLabels([partialLabel]);
-      
-      // Registrar lote parcial
-      const partialLote: Lote = {
-        id: newLoteId,
-        sku: currentSku,
-        fecha: getCurrentDateString(),
-        operador: currentOperator,
-        cantidad: partialCount,
-        buenos: partialCount,
-        malos: 0,
-        procesados: partialCount
-      };
-      setLoteDatabase(prev => [...prev, partialLote]);
       
       toast({
         title: "Etiqueta parcial impresa",
         description: `Etiqueta parcial para lote ${newLoteId} - ${partialCount} unidades`,
       });
 
-      // Actualizar lote actual
-      setCurrentLote(incrementLote(newLoteId));
-      
     } catch (error) {
       toast({
-        title: "Error de impresión",
-        description: "No se pudo imprimir la etiqueta parcial: " + (error as Error).message,
+        title: "Lote parcial registrado - Error de impresión",
+        description: `Lote parcial ${newLoteId} registrado correctamente. Error: ${(error as Error).message}`,
         variant: "destructive"
       });
     }
+
+    setCurrentLote(incrementLote(newLoteId));
   };
 
   const exportLogs = () => {
@@ -630,7 +609,6 @@ const QualityApp = () => {
                   standardPack={currentStandardPack}
                 />
                 
-                {/* Panel de Mensajes del Arduino en tiempo real */}
                 <ArduinoMessagesPanel
                   messages={arduinoMessages}
                   isConnected={isConnected && serverConnected}
