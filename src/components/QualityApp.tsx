@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,8 @@ const QualityApp = () => {
   const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
+  // Nuevo: Set para rastrear códigos vistos inmediatamente (evita duplicados)
+  const seenCodigosRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -60,7 +62,12 @@ const QualityApp = () => {
     const savedLogFormat = localStorage.getItem('log_format');
 
     if (savedSkus) setSkuDatabase(JSON.parse(savedSkus));
-    if (savedCodigos) setCodigosDatabase(JSON.parse(savedCodigos));
+    if (savedCodigos) {
+      const loadedCodigos = JSON.parse(savedCodigos);
+      setCodigosDatabase(loadedCodigos);
+      // Poblar el Set con códigos existentes
+      seenCodigosRef.current = new Set(loadedCodigos.map((c: CodigoGlobal) => c.codigo));
+    }
     if (savedLotes) setLoteDatabase(JSON.parse(savedLotes));
     if (savedResults) setTestResults(JSON.parse(savedResults));
     if (savedOperator) setCurrentOperator(savedOperator);
@@ -328,20 +335,30 @@ const QualityApp = () => {
       setShowNewSkuDialog(true);
     }
 
-    // Verificar si el código ya existe en la DB de códigos SOLO si la DB ya está cargada
-    if (isDatabaseLoaded && !codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result)) {
+    // SOLUCIÓN DEFINITIVA: Verificar códigos usando Set inmediato + base de datos
+    if (isDatabaseLoaded && !seenCodigosRef.current.has(arduinoResult.result)) {
+      console.log(`Nuevo código detectado: ${arduinoResult.result}, agregando inmediatamente al Set y DB`);
+      
+      // Agregar inmediatamente al Set para prevenir duplicados
+      seenCodigosRef.current.add(arduinoResult.result);
+      
       const newCodigo: CodigoGlobal = {
         codigo: arduinoResult.result,
         descripcion: '',
         notas: '',
         fechaCreacion: getCurrentDateString()
       };
-      setCurrentNewCodigo(newCodigo);
+      
+      // Agregar a la base de datos de códigos
       setCodigosDatabase(prev => [...prev, newCodigo]);
       
+      // Solo mostrar diálogo para códigos que no sean 'OK'
       if (arduinoResult.result !== 'OK') {
+        setCurrentNewCodigo(newCodigo);
         setShowNewCodigoDialog(true);
       }
+    } else if (seenCodigosRef.current.has(arduinoResult.result)) {
+      console.log(`Código ya conocido: ${arduinoResult.result}, no agregando duplicado`);
     }
 
     if (arduinoResult.result !== 'OK') {
@@ -395,6 +412,9 @@ const QualityApp = () => {
           ? { ...codigo, descripcion: tempCodigoDescription, notas: tempCodigoNotas }
           : codigo
       ));
+      
+      // Asegurar que el código esté en el Set (aunque ya debería estar)
+      seenCodigosRef.current.add(currentNewCodigo.codigo);
     }
     setShowNewCodigoDialog(false);
     setTempCodigoDescription('');
