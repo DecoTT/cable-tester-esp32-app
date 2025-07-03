@@ -6,6 +6,9 @@ const { ReadlineParser } = require('@serialport/parser-readline');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const QRCode = require('qrcode');
+const printer = require('node-printer');
+const htmlPdf = require('html-pdf-node');
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +36,9 @@ let currentArduinoState = {
 
 // Configuración del puerto serial
 const BAUD_RATE = 9600;
+
+// Configuración de impresión
+let defaultPrinter = null;
 
 // Función para crear timestamp
 function getTimestamp() {
@@ -103,6 +109,164 @@ function saveToLogFile(message) {
     fs.appendFileSync(logFile, logEntry);
   } catch (error) {
     console.error('Error guardando log:', error);
+  }
+}
+
+// Función para generar QR code como base64
+async function generateQRCode(data) {
+  try {
+    const qrCodeDataUrl = await QRCode.toDataURL(data, {
+      width: 80,
+      height: 80,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    return qrCodeDataUrl;
+  } catch (error) {
+    console.error('Error generando QR:', error);
+    return null;
+  }
+}
+
+// Función para generar HTML de etiqueta con QR real
+async function generateLabelHTML(sku, date, qty, lote) {
+  const qrData = `${sku}+${date}+${qty}+${lote}`;
+  const qrCodeImage = await generateQRCode(qrData);
+  
+  return `
+    <div style="
+      width: 1.3in; 
+      height: 1in; 
+      border: 1px solid #000;
+      display: inline-block;
+      margin: 2px;
+      padding: 4px;
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+      text-align: center;
+      page-break-inside: avoid;
+      vertical-align: top;
+    ">
+      <div style="font-weight: bold; font-size: 10px; margin-bottom: 2px;">${sku}</div>
+      <div style="margin-bottom: 1px;">Fecha: ${date}</div>
+      <div style="margin-bottom: 1px;">Lote: ${lote}</div>
+      <div style="margin-bottom: 2px;">QTY: ${qty}</div>
+      <div style="margin: 0 auto 2px auto; width: 40px; height: 40px;">
+        ${qrCodeImage ? `<img src="${qrCodeImage}" style="width: 40px; height: 40px;" />` : 
+          `<div style="border: 1px solid #666; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 6px; background: #f0f0f0;">QR</div>`}
+      </div>
+      <div style="font-size: 6px; margin-top: 1px; word-break: break-all;">
+        ${qrData}
+      </div>
+    </div>
+  `;
+}
+
+// Función para imprimir etiquetas usando el sistema
+async function printLabelsToSystem(labels) {
+  try {
+    // Generar HTML de las etiquetas
+    const labelPromises = labels.map(label => 
+      generateLabelHTML(label.sku, label.date, label.qty, label.lote)
+    );
+    const labelHTMLs = await Promise.all(labelPromises);
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Etiquetas</title>
+        <style>
+          @media print {
+            @page {
+              size: auto;
+              margin: 0.2in;
+            }
+            body {
+              margin: 0;
+              padding: 0;
+            }
+          }
+          body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+          }
+          .label-row {
+            display: block;
+            margin-bottom: 5px;
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="label-row">
+          ${labelHTMLs.join('')}
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Obtener impresoras disponibles
+    const printers = printer.getPrinters();
+    const targetPrinter = defaultPrinter || (printers.length > 0 ? printers[0].name : null);
+    
+    if (!targetPrinter) {
+      throw new Error('No hay impresoras disponibles');
+    }
+
+    // Crear PDF temporal
+    const options = { 
+      format: 'A4',
+      margin: { top: '0.2in', right: '0.2in', bottom: '0.2in', left: '0.2in' }
+    };
+    
+    const file = { content: printContent };
+    const pdfBuffer = await htmlPdf.generatePdf(file, options);
+    
+    // Guardar PDF temporal
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir);
+    }
+    
+    const tempFile = path.join(tempDir, `labels_${Date.now()}.pdf`);
+    fs.writeFileSync(tempFile, pdfBuffer);
+    
+    // Enviar a impresora
+    printer.printFile({
+      filename: tempFile,
+      printer: targetPrinter,
+      success: function(jobID) {
+        console.log(`Trabajo de impresión enviado: ${jobID}`);
+        // Limpiar archivo temporal después de un tiempo
+        setTimeout(() => {
+          try {
+            fs.unlinkSync(tempFile);
+          } catch (e) {
+            console.error('Error eliminando archivo temporal:', e);
+          }
+        }, 5000);
+      },
+      error: function(err) {
+        console.error('Error de impresión:', err);
+        // Limpiar archivo temporal
+        try {
+          fs.unlinkSync(tempFile);
+        } catch (e) {
+          console.error('Error eliminando archivo temporal:', e);
+        }
+      }
+    });
+    
+    return { success: true, message: `Etiquetas enviadas a impresora: ${targetPrinter}` };
+    
+  } catch (error) {
+    console.error('Error imprimiendo etiquetas:', error);
+    return { success: false, message: 'Error imprimiendo etiquetas: ' + error.message };
   }
 }
 
@@ -324,6 +488,133 @@ app.get('/api/arduino-logs', (req, res) => {
   res.json(limitedMessages);
 });
 
+// NUEVAS RUTAS PARA IMPRESIÓN
+app.post('/api/print-labels', async (req, res) => {
+  try {
+    const { labels } = req.body;
+    
+    if (!labels || !Array.isArray(labels) || labels.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere un array de etiquetas'
+      });
+    }
+    
+    // Validar formato de etiquetas
+    for (const label of labels) {
+      if (!label.sku || !label.date || !label.qty || !label.lote) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cada etiqueta debe tener sku, date, qty y lote'
+        });
+      }
+    }
+    
+    const result = await printLabelsToSystem(labels);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error en endpoint de impresión:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor: ' + error.message
+    });
+  }
+});
+
+app.get('/api/printers', (req, res) => {
+  try {
+    const printers = printer.getPrinters();
+    res.json({
+      success: true,
+      printers: printers.map(p => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        isDefault: p.isDefault || false,
+        status: p.status || 'unknown'
+      })),
+      defaultPrinter
+    });
+  } catch (error) {
+    console.error('Error obteniendo impresoras:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo impresoras: ' + error.message
+    });
+  }
+});
+
+app.post('/api/set-default-printer', (req, res) => {
+  try {
+    const { printerName } = req.body;
+    
+    if (!printerName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nombre de impresora requerido'
+      });
+    }
+    
+    const printers = printer.getPrinters();
+    const printerExists = printers.some(p => p.name === printerName);
+    
+    if (!printerExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Impresora no encontrada'
+      });
+    }
+    
+    defaultPrinter = printerName;
+    
+    res.json({
+      success: true,
+      message: `Impresora predeterminada establecida: ${printerName}`
+    });
+    
+  } catch (error) {
+    console.error('Error estableciendo impresora predeterminada:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error estableciendo impresora: ' + error.message
+    });
+  }
+});
+
+app.post('/api/generate-qr', async (req, res) => {
+  try {
+    const { data } = req.body;
+    
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos requeridos para generar QR'
+      });
+    }
+    
+    const qrCodeImage = await generateQRCode(data);
+    
+    if (!qrCodeImage) {
+      return res.status(500).json({
+        success: false,
+        message: 'Error generando código QR'
+      });
+    }
+    
+    res.json({
+      success: true,
+      qrCode: qrCodeImage
+    });
+    
+  } catch (error) {
+    console.error('Error generando QR:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generando QR: ' + error.message
+    });
+  }
+});
+
 // WebSocket para comunicación en tiempo real
 io.on('connection', (socket) => {
   connectedClients++;
@@ -359,6 +650,10 @@ server.listen(PORT, () => {
   console.log('  POST /api/start-test');
   console.log('  POST /api/send-command');
   console.log('  GET  /api/arduino-logs');
+  console.log('  POST /api/print-labels');
+  console.log('  GET  /api/printers');
+  console.log('  POST /api/set-default-printer');
+  console.log('  POST /api/generate-qr');
   console.log('WebSocket: ws://localhost:' + PORT);
 });
 

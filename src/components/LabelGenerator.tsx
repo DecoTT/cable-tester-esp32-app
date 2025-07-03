@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Printer, Package, Calendar, Hash, QrCode } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Printer, Package, Calendar, Hash, QrCode, Settings } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { Lote } from '@/types';
-import { printLabels } from '@/utils/printUtils';
+import { printLabels, getAvailablePrinters, setDefaultPrinter, generateQRCode } from '@/utils/printUtils';
 
 interface LabelGeneratorProps {
   currentSku: string;
@@ -28,6 +29,86 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   const [manualQty, setManualQty] = useState(standardPack.toString());
   const [customSku, setCustomSku] = useState(currentSku);
   const [customLote, setCustomLote] = useState(currentLote);
+  const [availablePrinters, setAvailablePrinters] = useState<any[]>([]);
+  const [selectedPrinter, setSelectedPrinter] = useState<string>('');
+  const [qrPreviewAuto, setQrPreviewAuto] = useState<string>('');
+  const [qrPreviewManual, setQrPreviewManual] = useState<string>('');
+
+  useEffect(() => {
+    setCustomSku(currentSku);
+  }, [currentSku]);
+
+  useEffect(() => {
+    setCustomLote(currentLote);
+  }, [currentLote]);
+
+  useEffect(() => {
+    setManualQty(standardPack.toString());
+  }, [standardPack]);
+
+  useEffect(() => {
+    loadPrinters();
+  }, []);
+
+  useEffect(() => {
+    // Generar QR preview para etiqueta automática
+    if (currentSku) {
+      const qrData = `${currentSku}+${getCurrentDateString()}+${standardPack}+${currentLote}`;
+      generateQRCode(qrData).then(qrCode => {
+        if (qrCode) {
+          setQrPreviewAuto(qrCode);
+        }
+      }).catch(console.error);
+    }
+  }, [currentSku, currentLote, standardPack]);
+
+  useEffect(() => {
+    // Generar QR preview para etiqueta manual
+    if (customSku) {
+      const qrData = `${customSku}+${getCurrentDateString()}+${manualQty}+${customLote}`;
+      generateQRCode(qrData).then(qrCode => {
+        if (qrCode) {
+          setQrPreviewManual(qrCode);
+        }
+      }).catch(console.error);
+    }
+  }, [customSku, customLote, manualQty]);
+
+  const loadPrinters = async () => {
+    try {
+      const result = await getAvailablePrinters();
+      setAvailablePrinters(result.printers);
+      if (result.defaultPrinter) {
+        setSelectedPrinter(result.defaultPrinter);
+      } else if (result.printers.length > 0) {
+        setSelectedPrinter(result.printers[0].name);
+      }
+    } catch (error) {
+      console.error('Error cargando impresoras:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las impresoras disponibles",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handlePrinterChange = async (printerName: string) => {
+    setSelectedPrinter(printerName);
+    try {
+      await setDefaultPrinter(printerName);
+      toast({
+        title: "Impresora actualizada",
+        description: `Impresora predeterminada: ${printerName}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudo establecer la impresora predeterminada",
+        variant: "destructive"
+      });
+    }
+  };
 
   const getCurrentDateString = () => {
     const now = new Date();
@@ -36,11 +117,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
            now.getDate().toString().padStart(2, '0');
   };
 
-  const generateQRData = (sku: string, fecha: string, qty: string, lote: string) => {
-    return `${sku}+${fecha}+${qty}+${lote}`;
-  };
-
-  const generateAutoLabel = () => {
+  const generateAutoLabel = async () => {
     if (!currentSku) {
       toast({
         title: "Error",
@@ -59,15 +136,23 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       }
     ];
 
-    printLabels(labelsToGenerate);
-    
-    toast({
-      title: "Etiqueta generada automáticamente",
-      description: `Etiqueta para ${currentSku} - Lote ${currentLote} - ${standardPack} unidades`,
-    });
+    try {
+      await printLabels(labelsToGenerate);
+      
+      toast({
+        title: "Etiqueta generada automáticamente",
+        description: `Etiqueta para ${currentSku} - Lote ${currentLote} - ${standardPack} unidades`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error de impresión",
+        description: "No se pudo imprimir la etiqueta: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
-  const generateManualLabel = () => {
+  const generateManualLabel = async () => {
     if (!customSku || !manualQty) {
       toast({
         title: "Error",
@@ -86,15 +171,23 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       }
     ];
 
-    printLabels(labelsToGenerate);
-    
-    toast({
-      title: "Etiqueta generada manualmente",
-      description: `Etiqueta para ${customSku} - Lote ${customLote} - ${manualQty} unidades`,
-    });
+    try {
+      await printLabels(labelsToGenerate);
+      
+      toast({
+        title: "Etiqueta generada manualmente",
+        description: `Etiqueta para ${customSku} - Lote ${customLote} - ${manualQty} unidades`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error de impresión",
+        description: "No se pudo imprimir la etiqueta: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
-  const printPairs = () => {
+  const printPairs = async () => {
     const requiredForPair = standardPack * 2;
     if (okCount < requiredForPair) {
       toast({
@@ -120,12 +213,20 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       }
     ];
 
-    printLabels(labelsToGenerate);
-    
-    toast({
-      title: "Par de etiquetas impresas",
-      description: `2 etiquetas para ${currentSku} - Lote ${currentLote} (${standardPack} c/u)`,
-    });
+    try {
+      await printLabels(labelsToGenerate);
+      
+      toast({
+        title: "Par de etiquetas impresas",
+        description: `2 etiquetas para ${currentSku} - Lote ${currentLote} (${standardPack} c/u)`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error de impresión",
+        description: "No se pudieron imprimir las etiquetas: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
   const printPartial = () => {
@@ -142,8 +243,8 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
     onGeneratePartial(partialCount);
   };
 
-  // Vista previa de etiqueta
-  const LabelPreview = ({ sku, qty, lote, fecha }: { sku: string, qty: string, lote: string, fecha: string }) => (
+  // Vista previa de etiqueta con QR real
+  const LabelPreview = ({ sku, qty, lote, fecha, qrCode }: { sku: string, qty: string, lote: string, fecha: string, qrCode?: string }) => (
     <div className="border-2 border-dashed border-gray-300 p-4 bg-white rounded-lg">
       <div className="text-center space-y-2">
         <div className="text-xs font-bold">{sku}</div>
@@ -151,12 +252,16 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
         <div className="text-xs">Lote: {lote}</div>
         <div className="text-xs">QTY: {qty}</div>
         <div className="flex justify-center">
-          <div className="w-16 h-16 border border-gray-400 bg-gray-100 flex items-center justify-center">
-            <QrCode className="w-8 h-8 text-gray-600" />
-          </div>
+          {qrCode ? (
+            <img src={qrCode} alt="QR Code" className="w-16 h-16" />
+          ) : (
+            <div className="w-16 h-16 border border-gray-400 bg-gray-100 flex items-center justify-center">
+              <QrCode className="w-8 h-8 text-gray-600" />
+            </div>
+          )}
         </div>
         <div className="text-xs text-gray-500">
-          {generateQRData(sku, fecha, qty, lote)}
+          {`${sku}+${fecha}+${qty}+${lote}`}
         </div>
       </div>
     </div>
@@ -171,6 +276,38 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
           Imprime automáticamente 2 etiquetas cada {standardPack * 2} cables OK ({standardPack} c/u)
         </p>
       </div>
+
+      {/* Printer Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Settings className="w-5 h-5" />
+            <span>Configuración de Impresora</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium mb-2">Impresora Seleccionada</label>
+              <Select value={selectedPrinter} onValueChange={handlePrinterChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccione una impresora" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availablePrinters.map((printer) => (
+                    <SelectItem key={printer.name} value={printer.name}>
+                      {printer.displayName} {printer.isDefault ? "(Predeterminada)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={loadPrinters} variant="outline">
+              Actualizar Lista
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -344,7 +481,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       {/* Label Preview */}
       <Card>
         <CardHeader>
-          <CardTitle>Vista Previa de Etiqueta (1.3" x 1")</CardTitle>
+          <CardTitle>Vista Previa de Etiqueta con QR Real (1.3" x 1")</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-center space-x-4">
@@ -352,9 +489,10 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
               <p className="text-sm font-medium mb-2 text-center">Etiqueta Automática</p>
               <LabelPreview 
                 sku={currentSku || 'NP-SCA-4'}
-                qty="10"
+                qty={standardPack.toString()}
                 lote={currentLote}
                 fecha={getCurrentDateString()}
+                qrCode={qrPreviewAuto}
               />
             </div>
             <div>
@@ -364,6 +502,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
                 qty={manualQty}
                 lote={customLote}
                 fecha={getCurrentDateString()}
+                qrCode={qrPreviewManual}
               />
             </div>
           </div>
@@ -373,7 +512,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
               <strong>Formato QR/DataMatrix:</strong> SKU+FECHA+QTY+LOTE
             </p>
             <p className="text-xs text-blue-500 mt-1">
-              Las etiquetas se imprimen en pares (2 por línea) automáticamente cada 20 cables OK
+              Las etiquetas se imprimen usando la impresora: <strong>{selectedPrinter || 'No seleccionada'}</strong>
             </p>
           </div>
         </CardContent>

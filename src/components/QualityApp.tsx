@@ -402,7 +402,7 @@ const QualityApp = () => {
     setCurrentNewCodigo(null);
   };
 
-  const generateLabel = () => {
+  const generateLabel = async () => {
     const labelsToGenerate = [
       {
         sku: currentSku,
@@ -418,42 +418,51 @@ const QualityApp = () => {
       }
     ];
 
-    // Imprimir automáticamente
-    printLabels(labelsToGenerate);
-    
-    toast({
-      title: "Etiquetas impresas automáticamente",
-      description: `2 etiquetas para lote ${currentLote} - ${currentStandardPack * 2} cables OK total`,
-    });
-    
-    // Registrar lote completo
-    const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
-    
-    if (existingLote) {
-      setLoteDatabase(prev => prev.map(l => 
-        l.id === currentLote && l.sku === currentSku 
-          ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: totalProcessed + 1 }
-          : l
-      ));
-    } else {
-      const newLote: Lote = {
-        id: currentLote,
-        sku: currentSku,
-        fecha: getCurrentDateString(),
-        operador: currentOperator,
-        cantidad: currentStandardPack * 2,
-        buenos: currentStandardPack * 2,
-        malos: 0,
-        procesados: currentStandardPack * 2
-      };
-      setLoteDatabase(prev => [...prev, newLote]);
-    }
+    try {
+      // Imprimir automáticamente usando el servidor
+      await printLabels(labelsToGenerate);
+      
+      toast({
+        title: "Etiquetas impresas automáticamente",
+        description: `2 etiquetas para lote ${currentLote} - ${currentStandardPack * 2} cables OK total`,
+      });
+      
+      // Registrar lote completo
+      const existingLote = loteDatabase.find(l => l.id === currentLote && l.sku === currentSku);
+      
+      if (existingLote) {
+        setLoteDatabase(prev => prev.map(l => 
+          l.id === currentLote && l.sku === currentSku 
+            ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: totalProcessed + 1 }
+            : l
+        ));
+      } else {
+        const newLote: Lote = {
+          id: currentLote,
+          sku: currentSku,
+          fecha: getCurrentDateString(),
+          operador: currentOperator,
+          cantidad: currentStandardPack * 2,
+          buenos: currentStandardPack * 2,
+          malos: 0,
+          procesados: currentStandardPack * 2
+        };
+        setLoteDatabase(prev => [...prev, newLote]);
+      }
 
-    // Auto-incrementar lote para el siguiente
-    setCurrentLote(incrementLote(currentLote));
+      // Auto-incrementar lote para el siguiente
+      setCurrentLote(incrementLote(currentLote));
+      
+    } catch (error) {
+      toast({
+        title: "Error de impresión",
+        description: "No se pudieron imprimir las etiquetas: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
-  const generatePartialLabel = (partialCount: number) => {
+  const generatePartialLabel = async (partialCount: number) => {
     const newLoteId = incrementLote(currentLote);
     
     const partialLabel = {
@@ -463,29 +472,38 @@ const QualityApp = () => {
       lote: newLoteId
     };
 
-    // Imprimir etiqueta parcial
-    printLabels([partialLabel]);
-    
-    // Registrar lote parcial
-    const partialLote: Lote = {
-      id: newLoteId,
-      sku: currentSku,
-      fecha: getCurrentDateString(),
-      operador: currentOperator,
-      cantidad: partialCount,
-      buenos: partialCount,
-      malos: 0,
-      procesados: partialCount
-    };
-    setLoteDatabase(prev => [...prev, partialLote]);
-    
-    toast({
-      title: "Etiqueta parcial impresa",
-      description: `Etiqueta parcial para lote ${newLoteId} - ${partialCount} unidades`,
-    });
+    try {
+      // Imprimir etiqueta parcial usando el servidor
+      await printLabels([partialLabel]);
+      
+      // Registrar lote parcial
+      const partialLote: Lote = {
+        id: newLoteId,
+        sku: currentSku,
+        fecha: getCurrentDateString(),
+        operador: currentOperator,
+        cantidad: partialCount,
+        buenos: partialCount,
+        malos: 0,
+        procesados: partialCount
+      };
+      setLoteDatabase(prev => [...prev, partialLote]);
+      
+      toast({
+        title: "Etiqueta parcial impresa",
+        description: `Etiqueta parcial para lote ${newLoteId} - ${partialCount} unidades`,
+      });
 
-    // Actualizar lote actual
-    setCurrentLote(incrementLote(newLoteId));
+      // Actualizar lote actual
+      setCurrentLote(incrementLote(newLoteId));
+      
+    } catch (error) {
+      toast({
+        title: "Error de impresión",
+        description: "No se pudo imprimir la etiqueta parcial: " + (error as Error).message,
+        variant: "destructive"
+      });
+    }
   };
 
   const exportLogs = () => {

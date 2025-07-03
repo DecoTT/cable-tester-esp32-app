@@ -1,4 +1,6 @@
 
+const SERVER_URL = 'http://localhost:3001';
+
 export const generateLabelHTML = (sku: string, date: string, qty: string, lote: string) => {
   const qrData = `${sku}+${date}+${qty}+${lote}`;
   
@@ -38,51 +40,88 @@ export const generateLabelHTML = (sku: string, date: string, qty: string, lote: 
   `;
 };
 
-export const printLabels = (labels: Array<{sku: string, date: string, qty: string, lote: string}>) => {
-  const printContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Etiquetas</title>
-      <style>
-        @media print {
-          @page {
-            size: auto;
-            margin: 0.2in;
-          }
-          body {
-            margin: 0;
-            padding: 0;
-          }
-        }
-        body {
-          font-family: Arial, sans-serif;
-          margin: 0;
-          padding: 10px;
-        }
-        .label-row {
-          display: block;
-          margin-bottom: 5px;
-          page-break-inside: avoid;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="label-row">
-        ${labels.map(label => generateLabelHTML(label.sku, label.date, label.qty, label.lote)).join('')}
-      </div>
-    </body>
-    </html>
-  `;
+export const printLabels = async (labels: Array<{sku: string, date: string, qty: string, lote: string}>) => {
+  try {
+    const response = await fetch(`${SERVER_URL}/api/print-labels`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ labels }),
+    });
 
-  const printWindow = window.open('', '_blank');
-  if (printWindow) {
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error imprimiendo etiquetas:', error);
+    throw error;
+  }
+};
+
+export const getAvailablePrinters = async () => {
+  try {
+    const response = await fetch(`${SERVER_URL}/api/printers`);
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error obteniendo impresoras:', error);
+    throw error;
+  }
+};
+
+export const setDefaultPrinter = async (printerName: string) => {
+  try {
+    const response = await fetch(`${SERVER_URL}/api/set-default-printer`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ printerName }),
+    });
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error estableciendo impresora predeterminada:', error);
+    throw error;
+  }
+};
+
+export const generateQRCode = async (data: string) => {
+  try {
+    const response = await fetch(`${SERVER_URL}/api/generate-qr`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ data }),
+    });
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.message);
+    }
+    
+    return result.qrCode;
+  } catch (error) {
+    console.error('Error generando QR:', error);
+    throw error;
   }
 };
 
