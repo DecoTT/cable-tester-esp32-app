@@ -15,8 +15,8 @@
     "@serialport/parser-readline": "^12.0.0",
     "cors": "^2.8.5",
     "qrcode": "^1.5.3",
-    "node-printer": "^1.0.0",
-    "html-pdf-node": "^1.0.8"
+    "jspdf": "^2.5.1",
+    "portfinder": "^1.0.32"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

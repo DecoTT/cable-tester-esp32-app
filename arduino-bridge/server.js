@@ -7,17 +7,13 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
-const printer = require('node-printer');
-const htmlPdf = require('html-pdf-node');
+const { jsPDF } = require('jspdf');
+const portfinder = require('portfinder');
+const { exec } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+let io = null;
 
 app.use(cors());
 app.use(express.json());
@@ -33,12 +29,10 @@ let currentArduinoState = {
   operator: '',
   status: 'idle'
 };
+let serverPort = 3001;
 
 // Configuración del puerto serial
 const BAUD_RATE = 9600;
-
-// Configuración de impresión
-let defaultPrinter = null;
 
 // Función para crear timestamp
 function getTimestamp() {
@@ -116,8 +110,8 @@ function saveToLogFile(message) {
 async function generateQRCode(data) {
   try {
     const qrCodeDataUrl = await QRCode.toDataURL(data, {
-      width: 80,
-      height: 80,
+      width: 160,
+      height: 160,
       margin: 1,
       color: {
         dark: '#000000',
@@ -131,142 +125,167 @@ async function generateQRCode(data) {
   }
 }
 
-// Función para generar HTML de etiqueta con QR real
-async function generateLabelHTML(sku, date, qty, lote) {
-  const qrData = `${sku}+${date}+${qty}+${lote}`;
-  const qrCodeImage = await generateQRCode(qrData);
-  
-  return `
-    <div style="
-      width: 1.3in; 
-      height: 1in; 
-      border: 1px solid #000;
-      display: inline-block;
-      margin: 2px;
-      padding: 4px;
-      font-family: Arial, sans-serif;
-      font-size: 8px;
-      text-align: center;
-      page-break-inside: avoid;
-      vertical-align: top;
-    ">
-      <div style="font-weight: bold; font-size: 10px; margin-bottom: 2px;">${sku}</div>
-      <div style="margin-bottom: 1px;">Fecha: ${date}</div>
-      <div style="margin-bottom: 1px;">Lote: ${lote}</div>
-      <div style="margin-bottom: 2px;">QTY: ${qty}</div>
-      <div style="margin: 0 auto 2px auto; width: 40px; height: 40px;">
-        ${qrCodeImage ? `<img src="${qrCodeImage}" style="width: 40px; height: 40px;" />` : 
-          `<div style="border: 1px solid #666; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 6px; background: #f0f0f0;">QR</div>`}
-      </div>
-      <div style="font-size: 6px; margin-top: 1px; word-break: break-all;">
-        ${qrData}
-      </div>
-    </div>
-  `;
-}
-
-// Función para imprimir etiquetas usando el sistema
-async function printLabelsToSystem(labels) {
+// Función para crear PDF de etiquetas usando jsPDF
+async function createLabelsPDF(labels) {
   try {
-    // Generar HTML de las etiquetas
-    const labelPromises = labels.map(label => 
-      generateLabelHTML(label.sku, label.date, label.qty, label.lote)
-    );
-    const labelHTMLs = await Promise.all(labelPromises);
-    
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Etiquetas</title>
-        <style>
-          @media print {
-            @page {
-              size: auto;
-              margin: 0.2in;
-            }
-            body {
-              margin: 0;
-              padding: 0;
-            }
-          }
-          body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 10px;
-          }
-          .label-row {
-            display: block;
-            margin-bottom: 5px;
-            page-break-inside: avoid;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="label-row">
-          ${labelHTMLs.join('')}
-        </div>
-      </body>
-      </html>
-    `;
+    const doc = new jsPDF({
+      unit: 'in',
+      format: [8.5, 11], // Carta
+      orientation: 'portrait'
+    });
 
-    // Obtener impresoras disponibles
-    const printers = printer.getPrinters();
-    const targetPrinter = defaultPrinter || (printers.length > 0 ? printers[0].name : null);
+    const labelWidth = 1.3;
+    const labelHeight = 1.0;
+    const margin = 0.2;
+    const labelsPerRow = Math.floor((8.5 - 2 * margin) / labelWidth);
     
-    if (!targetPrinter) {
-      throw new Error('No hay impresoras disponibles');
+    let currentX = margin;
+    let currentY = margin;
+    let labelCount = 0;
+
+    for (const label of labels) {
+      // Si necesitamos nueva fila
+      if (labelCount > 0 && labelCount % labelsPerRow === 0) {
+        currentX = margin;
+        currentY += labelHeight + 0.1;
+        
+        // Si necesitamos nueva página
+        if (currentY + labelHeight > 10.5) {
+          doc.addPage();
+          currentY = margin;
+        }
+      }
+
+      // Dibujar borde de etiqueta
+      doc.rect(currentX, currentY, labelWidth, labelHeight);
+
+      // SKU (más grande)
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text(label.sku, currentX + labelWidth/2, currentY + 0.15, { align: 'center' });
+
+      // Información de la etiqueta
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Fecha: ${label.date}`, currentX + 0.05, currentY + 0.3);
+      doc.text(`Lote: ${label.lote}`, currentX + 0.05, currentY + 0.4);
+      doc.text(`QTY: ${label.qty}`, currentX + 0.05, currentY + 0.5);
+
+      // Generar y agregar QR code
+      const qrData = `${label.sku}+${label.date}+${label.qty}+${label.lote}`;
+      const qrCodeImage = await generateQRCode(qrData);
+      
+      if (qrCodeImage) {
+        const qrSize = 0.4;
+        const qrX = currentX + labelWidth - qrSize - 0.05;
+        const qrY = currentY + 0.25;
+        doc.addImage(qrCodeImage, 'PNG', qrX, qrY, qrSize, qrSize);
+      }
+
+      // Datos del QR en texto pequeño
+      doc.setFontSize(6);
+      const qrText = qrData;
+      const textWidth = doc.getTextWidth(qrText);
+      if (textWidth > labelWidth - 0.1) {
+        // Dividir texto si es muy largo
+        const midPoint = Math.floor(qrText.length / 2);
+        const part1 = qrText.substring(0, midPoint);
+        const part2 = qrText.substring(midPoint);
+        doc.text(part1, currentX + labelWidth/2, currentY + 0.85, { align: 'center' });
+        doc.text(part2, currentX + labelWidth/2, currentY + 0.92, { align: 'center' });
+      } else {
+        doc.text(qrText, currentX + labelWidth/2, currentY + 0.85, { align: 'center' });
+      }
+
+      currentX += labelWidth + 0.1;
+      labelCount++;
     }
 
-    // Crear PDF temporal
-    const options = { 
-      format: 'A4',
-      margin: { top: '0.2in', right: '0.2in', bottom: '0.2in', left: '0.2in' }
-    };
+    return doc.output('arraybuffer');
+  } catch (error) {
+    console.error('Error creando PDF:', error);
+    throw error;
+  }
+}
+
+// Función para imprimir usando comando del sistema
+function printPDFFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const isWindows = process.platform === 'win32';
+    const isMac = process.platform === 'darwin';
     
-    const file = { content: printContent };
-    const pdfBuffer = await htmlPdf.generatePdf(file, options);
+    let command;
     
-    // Guardar PDF temporal
+    if (isWindows) {
+      // En Windows, usar el comando print
+      command = `powershell -Command "Start-Process '${filePath}' -Verb Print"`;
+    } else if (isMac) {
+      // En Mac, usar lpr
+      command = `lpr "${filePath}"`;
+    } else {
+      // En Linux, usar lpr también
+      command = `lpr "${filePath}"`;
+    }
+
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Error imprimiendo:', error);
+        reject(error);
+        return;
+      }
+      
+      console.log('Archivo enviado a impresora');
+      resolve({ success: true });
+    });
+  });
+}
+
+// Función principal de impresión
+async function printLabelsToSystem(labels) {
+  try {
+    console.log(`Generando PDF para ${labels.length} etiquetas...`);
+    
+    // Crear PDF
+    const pdfBuffer = await createLabelsPDF(labels);
+    
+    // Guardar archivo temporal
     const tempDir = path.join(__dirname, 'temp');
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir);
     }
     
     const tempFile = path.join(tempDir, `labels_${Date.now()}.pdf`);
-    fs.writeFileSync(tempFile, pdfBuffer);
+    fs.writeFileSync(tempFile, Buffer.from(pdfBuffer));
+    
+    console.log(`PDF guardado en: ${tempFile}`);
     
     // Enviar a impresora
-    printer.printFile({
-      filename: tempFile,
-      printer: targetPrinter,
-      success: function(jobID) {
-        console.log(`Trabajo de impresión enviado: ${jobID}`);
-        // Limpiar archivo temporal después de un tiempo
-        setTimeout(() => {
-          try {
-            fs.unlinkSync(tempFile);
-          } catch (e) {
-            console.error('Error eliminando archivo temporal:', e);
-          }
-        }, 5000);
-      },
-      error: function(err) {
-        console.error('Error de impresión:', err);
-        // Limpiar archivo temporal
-        try {
-          fs.unlinkSync(tempFile);
-        } catch (e) {
-          console.error('Error eliminando archivo temporal:', e);
-        }
-      }
-    });
+    await printPDFFile(tempFile);
     
-    return { success: true, message: `Etiquetas enviadas a impresora: ${targetPrinter}` };
+    // Limpiar archivo temporal después de un tiempo
+    setTimeout(() => {
+      try {
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile);
+          console.log('Archivo temporal eliminado');
+        }
+      } catch (e) {
+        console.error('Error eliminando archivo temporal:', e);
+      }
+    }, 10000);
+    
+    return { 
+      success: true, 
+      message: `${labels.length} etiqueta(s) enviada(s) a impresora del sistema`,
+      pdfPath: tempFile
+    };
     
   } catch (error) {
     console.error('Error imprimiendo etiquetas:', error);
-    return { success: false, message: 'Error imprimiendo etiquetas: ' + error.message };
+    return { 
+      success: false, 
+      message: 'Error imprimiendo etiquetas: ' + error.message 
+    };
   }
 }
 
@@ -324,8 +343,8 @@ async function connectToArduino() {
     serialPort = new SerialPort({
       path: portPath,
       baudRate: BAUD_RATE,
-      dtr: false,  // Deshabilitar DTR para evitar reset del Arduino
-      rts: false   // Deshabilitar RTS para evitar reset del Arduino
+      dtr: false,
+      rts: false
     });
 
     parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
@@ -335,37 +354,36 @@ async function connectToArduino() {
         console.log('Puerto serial abierto sin resetear Arduino');
         isConnected = true;
         
-        // Configurar listeners
         parser.on('data', (data) => {
           const rawMessage = data.toString().trim();
           console.log('Datos del Arduino:', rawMessage);
           
-          // Parsear mensaje del Arduino
           const parsedMessage = parseArduinoMessage(rawMessage);
           
-          // Enviar todos los mensajes a los clientes
-          io.emit('arduino_message', parsedMessage);
-          
-          // Si es un resultado, también enviarlo como test_result
-          if (parsedMessage.type === 'RESULT') {
-            const testResult = {
-              result: parsedMessage.content,
-              timestamp: parsedMessage.timestamp,
-              duration: 0
-            };
-            io.emit('test_result', testResult);
-          }
-          
-          // Si es info, enviarlo como arduino_info
-          if (['INFO', 'STATUS'].includes(parsedMessage.type)) {
-            io.emit('arduino_info', parsedMessage);
+          if (io) {
+            io.emit('arduino_message', parsedMessage);
+            
+            if (parsedMessage.type === 'RESULT') {
+              const testResult = {
+                result: parsedMessage.content,
+                timestamp: parsedMessage.timestamp,
+                duration: 0
+              };
+              io.emit('test_result', testResult);
+            }
+            
+            if (['INFO', 'STATUS'].includes(parsedMessage.type)) {
+              io.emit('arduino_info', parsedMessage);
+            }
           }
         });
 
         serialPort.on('error', (err) => {
           console.error('Error del puerto serial:', err);
           isConnected = false;
-          io.emit('connection_lost', { error: err.message });
+          if (io) {
+            io.emit('connection_lost', { error: err.message });
+          }
         });
 
         resolve({ 
@@ -431,7 +449,8 @@ app.get('/api/status', (req, res) => {
     connected: isConnected,
     clients: connectedClients,
     timestamp: getTimestamp(),
-    arduinoState: currentArduinoState
+    arduinoState: currentArduinoState,
+    serverPort: serverPort
   });
 });
 
@@ -488,7 +507,7 @@ app.get('/api/arduino-logs', (req, res) => {
   res.json(limitedMessages);
 });
 
-// NUEVAS RUTAS PARA IMPRESIÓN
+// Rutas de impresión actualizadas
 app.post('/api/print-labels', async (req, res) => {
   try {
     const { labels } = req.body;
@@ -524,16 +543,17 @@ app.post('/api/print-labels', async (req, res) => {
 
 app.get('/api/printers', (req, res) => {
   try {
-    const printers = printer.getPrinters();
     res.json({
       success: true,
-      printers: printers.map(p => ({
-        name: p.name,
-        displayName: p.displayName || p.name,
-        isDefault: p.isDefault || false,
-        status: p.status || 'unknown'
-      })),
-      defaultPrinter
+      printers: [
+        {
+          name: 'Sistema',
+          displayName: 'Impresora del Sistema',
+          isDefault: true,
+          status: 'ready'
+        }
+      ],
+      defaultPrinter: 'Sistema'
     });
   } catch (error) {
     console.error('Error obteniendo impresoras:', error);
@@ -548,28 +568,9 @@ app.post('/api/set-default-printer', (req, res) => {
   try {
     const { printerName } = req.body;
     
-    if (!printerName) {
-      return res.status(400).json({
-        success: false,
-        message: 'Nombre de impresora requerido'
-      });
-    }
-    
-    const printers = printer.getPrinters();
-    const printerExists = printers.some(p => p.name === printerName);
-    
-    if (!printerExists) {
-      return res.status(404).json({
-        success: false,
-        message: 'Impresora no encontrada'
-      });
-    }
-    
-    defaultPrinter = printerName;
-    
     res.json({
       success: true,
-      message: `Impresora predeterminada establecida: ${printerName}`
+      message: `Impresora del sistema establecida: ${printerName || 'Sistema'}`
     });
     
   } catch (error) {
@@ -615,53 +616,109 @@ app.post('/api/generate-qr', async (req, res) => {
   }
 });
 
-// WebSocket para comunicación en tiempo real
-io.on('connection', (socket) => {
-  connectedClients++;
-  console.log(`Cliente conectado. Total: ${connectedClients}`);
-  
-  // Enviar estado actual
-  socket.emit('status', {
-    connected: isConnected,
-    timestamp: new Date().toISOString()
-  });
+// Función para inicializar el servidor con puerto automático
+async function startServer() {
+  try {
+    // Buscar puerto disponible empezando desde 3001
+    portfinder.basePort = 3001;
+    const availablePort = await portfinder.getPortPromise();
+    serverPort = availablePort;
+    
+    // Inicializar Socket.IO con el puerto encontrado
+    io = new Server(server, {
+      cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+      }
+    });
 
-  socket.on('disconnect', () => {
-    connectedClients--;
-    console.log(`Cliente desconectado. Total: ${connectedClients}`);
-  });
+    // WebSocket para comunicación en tiempo real
+    io.on('connection', (socket) => {
+      connectedClients++;
+      console.log(`Cliente conectado. Total: ${connectedClients}`);
+      
+      // Enviar estado actual y puerto del servidor
+      socket.emit('status', {
+        connected: isConnected,
+        timestamp: new Date().toISOString(),
+        serverPort: serverPort
+      });
 
-  // Manejar comandos desde el cliente
-  socket.on('start_test', (data) => {
-    const { sku, operator } = data;
-    const command = `START_TEST:${sku}:${operator}`;
-    sendCommandToArduino(command);
-  });
-});
+      socket.on('disconnect', () => {
+        connectedClients--;
+        console.log(`Cliente desconectado. Total: ${connectedClients}`);
+      });
 
-// Inicializar servidor
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Servidor Arduino Bridge ejecutándose en puerto ${PORT}`);
-  console.log('Endpoints disponibles:');
-  console.log('  GET  /api/status');
-  console.log('  POST /api/connect');
-  console.log('  POST /api/disconnect');
-  console.log('  POST /api/start-test');
-  console.log('  POST /api/send-command');
-  console.log('  GET  /api/arduino-logs');
-  console.log('  POST /api/print-labels');
-  console.log('  GET  /api/printers');
-  console.log('  POST /api/set-default-printer');
-  console.log('  POST /api/generate-qr');
-  console.log('WebSocket: ws://localhost:' + PORT);
-});
+      // Manejar comandos desde el cliente
+      socket.on('start_test', (data) => {
+        const { sku, operator } = data;
+        const command = `START_TEST:${sku}:${operator}`;
+        sendCommandToArduino(command);
+      });
+    });
+
+    // Iniciar servidor
+    server.listen(serverPort, () => {
+      console.log(`✅ Servidor Arduino Bridge ejecutándose en puerto ${serverPort}`);
+      console.log('📡 Endpoints disponibles:');
+      console.log(`   GET  http://localhost:${serverPort}/api/status`);
+      console.log(`   POST http://localhost:${serverPort}/api/connect`);
+      console.log(`   POST http://localhost:${serverPort}/api/disconnect`);
+      console.log(`   POST http://localhost:${serverPort}/api/start-test`);
+      console.log(`   POST http://localhost:${serverPort}/api/send-command`);
+      console.log(`   GET  http://localhost:${serverPort}/api/arduino-logs`);
+      console.log(`   POST http://localhost:${serverPort}/api/print-labels`);
+      console.log(`   GET  http://localhost:${serverPort}/api/printers`);
+      console.log(`   POST http://localhost:${serverPort}/api/set-default-printer`);
+      console.log(`   POST http://localhost:${serverPort}/api/generate-qr`);
+      console.log(`🔌 WebSocket: ws://localhost:${serverPort}`);
+      console.log('');
+      console.log('🖨️  Sistema de impresión: PDF + Sistema operativo');
+      console.log('🔧 Dependencias actualizadas y seguras');
+    });
+
+  } catch (error) {
+    console.error('❌ Error iniciando servidor:', error);
+    process.exit(1);
+  }
+}
 
 // Manejo de cierre graceful
 process.on('SIGINT', () => {
-  console.log('Cerrando servidor...');
+  console.log('\n🔄 Cerrando servidor...');
+  
+  // Cerrar conexión Arduino
+  if (isConnected) {
+    console.log('📡 Desconectando Arduino...');
+    disconnectArduino();
+  }
+  
+  // Limpiar archivos temporales
+  const tempDir = path.join(__dirname, 'temp');
+  if (fs.existsSync(tempDir)) {
+    try {
+      const files = fs.readdirSync(tempDir);
+      files.forEach(file => {
+        const filePath = path.join(tempDir, file);
+        fs.unlinkSync(filePath);
+      });
+      console.log('🗑️  Archivos temporales limpiados');
+    } catch (e) {
+      console.error('Error limpiando archivos temporales:', e);
+    }
+  }
+  
+  console.log('✅ Servidor cerrado correctamente');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('🔄 SIGTERM recibido, cerrando servidor...');
   if (isConnected) {
     disconnectArduino();
   }
   process.exit(0);
 });
+
+// Iniciar el servidor
+startServer();
