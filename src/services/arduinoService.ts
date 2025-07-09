@@ -7,13 +7,42 @@ export interface ArduinoTestResult {
   sku?: string;
   operator?: string;
   testId?: string;
+  cableCount?: number;
+  channelResults?: string[];
 }
 
 export interface ArduinoMessage {
-  type: 'INFO' | 'STATUS' | 'RESULT' | 'SKU' | 'OPERATOR' | 'UNKNOWN';
+  type: 'INFO' | 'STATUS' | 'RESULT' | 'SKU' | 'OPERATOR' | 'UNKNOWN' | 'CHANNEL_RESULT' | 'TEST_START';
   content: string;
   timestamp: string;
   raw: string;
+  channelData?: {
+    channel: number;
+    result: string;
+  };
+}
+
+// NEW: Interface for Arduino state
+export interface ArduinoState {
+  sku: string;
+  operator: string;
+  status: string;
+  cableCount: number;
+  channelResults: string[];
+}
+
+// NEW: Interface for channel results
+export interface ChannelResult {
+  channel: number;
+  result: string;
+  timestamp: string;
+}
+
+// NEW: Interface for test started event
+export interface TestStarted {
+  testId: string;
+  cableCount: number;
+  timestamp: string;
 }
 
 export interface ArduinoStatus {
@@ -113,7 +142,7 @@ class ArduinoService {
     return result;
   }
 
-  // IMPROVED: Start test with better logging
+  // UPDATED: Enhanced start test with better parameter handling
   async startTest(sku: string, operator: string): Promise<{ success: boolean; message: string }> {
     console.log(`🚀 Iniciando prueba - SKU: ${sku}, Operador: ${operator}`);
     
@@ -160,6 +189,36 @@ class ArduinoService {
     return response.json();
   }
 
+  // NEW: Get current Arduino state
+  async getArduinoState(): Promise<ArduinoState> {
+    const response = await fetch(`${this.baseURL}/api/arduino-state`);
+    if (!response.ok) {
+      throw new Error('Error obteniendo estado del Arduino');
+    }
+    const data = await response.json();
+    return data.state;
+  }
+
+  // NEW: Set SKU on Arduino
+  async setSku(sku: string): Promise<{ success: boolean; message: string }> {
+    return this.sendCommand(`SET_SKU:${sku}`);
+  }
+
+  // NEW: Set operator on Arduino
+  async setOperator(operator: string): Promise<{ success: boolean; message: string }> {
+    return this.sendCommand(`SET_OPERATOR:${operator}`);
+  }
+
+  // NEW: Stop current test
+  async stopTest(): Promise<{ success: boolean; message: string }> {
+    return this.sendCommand('STOP_TEST');
+  }
+
+  // NEW: Request Arduino status
+  async requestArduinoStatus(): Promise<{ success: boolean; message: string }> {
+    return this.sendCommand('GET_STATUS');
+  }
+
   // IMPROVED: Test result handler with better validation
   onTestResult(callback: (result: ArduinoTestResult) => void) {
     if (this.socket) {
@@ -183,16 +242,36 @@ class ArduinoService {
     }
   }
 
-  // IMPROVED: Arduino message handler with better filtering
+  // UPDATED: Enhanced Arduino message handler with new message types
   onArduinoMessage(callback: (message: ArduinoMessage) => void) {
     if (this.socket) {
       this.socket.on('arduino_message', (message: ArduinoMessage) => {
-        // Log only important message types to reduce noise
-        if (['RESULT', 'SKU', 'OPERATOR'].includes(message.type)) {
+        // Log important message types to reduce noise
+        if (['RESULT', 'SKU', 'OPERATOR', 'TEST_START', 'CHANNEL_RESULT'].includes(message.type)) {
           console.log(`📨 Arduino mensaje [${message.type}]:`, message.content);
         }
         
         callback(message);
+      });
+    }
+  }
+
+  // NEW: Listen for test started events
+  onTestStarted(callback: (testStarted: TestStarted) => void) {
+    if (this.socket) {
+      this.socket.on('test_started', (testStarted: TestStarted) => {
+        console.log('🚀 Test iniciado:', testStarted);
+        callback(testStarted);
+      });
+    }
+  }
+
+  // NEW: Listen for individual channel results
+  onChannelResult(callback: (channelResult: ChannelResult) => void) {
+    if (this.socket) {
+      this.socket.on('channel_result', (channelResult: ChannelResult) => {
+        console.log(`🔌 Canal ${channelResult.channel}:`, channelResult.result);
+        callback(channelResult);
       });
     }
   }

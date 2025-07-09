@@ -1,4 +1,3 @@
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -28,7 +27,9 @@ let arduinoMessages = []; // Almacenar todos los mensajes
 let currentArduinoState = {
   sku: '',
   operator: '',
-  status: 'idle'
+  status: 'idle',
+  cableCount: 6,
+  channelResults: []
 };
 let serverPort = 3001;
 
@@ -98,7 +99,7 @@ function completeTestTracking(result) {
   };
 }
 
-// Función para parsear mensajes del Arduino
+// UPDATED: Enhanced function to parse Arduino messages with new protocol
 function parseArduinoMessage(rawMessage) {
   const timestamp = getTimestamp();
   const message = rawMessage.trim();
@@ -120,17 +121,47 @@ function parseArduinoMessage(rawMessage) {
   } else if (message.startsWith('INFO:')) {
     type = 'INFO';
     content = message.substring(5).trim();
+    
+    // NEW: Parse cable count from INFO messages
+    const cableCountMatch = content.match(/Iniciando prueba de (\d+) cables/);
+    if (cableCountMatch) {
+      currentArduinoState.cableCount = parseInt(cableCountMatch[1]);
+      type = 'TEST_START';
+      content = `Iniciando prueba de ${currentArduinoState.cableCount} cables`;
+    }
   } else if (message.startsWith('STATUS:')) {
     type = 'STATUS';
     content = message.substring(7).trim();
     currentArduinoState.status = content;
+    
+    // Clear channel results when starting new test
+    if (content === 'Ejecutando prueba individual') {
+      currentArduinoState.channelResults = [];
+    }
+  } else if (message.startsWith('CHANNEL:')) {
+    // NEW: Parse channel results - Format: CHANNEL:X:OK/FAIL
+    type = 'CHANNEL_RESULT';
+    const channelMatch = message.match(/CHANNEL:(\d+):(OK|FAIL)/);
+    if (channelMatch) {
+      const channelNum = parseInt(channelMatch[1]);
+      const channelResult = channelMatch[2];
+      
+      currentArduinoState.channelResults[channelNum] = channelResult;
+      content = `Canal ${channelNum}: ${channelResult}`;
+    } else {
+      content = message.substring(8).trim();
+    }
   }
   
   const parsedMessage = {
     type,
     content,
     timestamp,
-    raw: message
+    raw: message,
+    channelData: type === 'CHANNEL_RESULT' ? {
+      channel: currentArduinoState.channelResults.length - 1,
+      result: content.includes('OK') ? 'OK' : 'FAIL'
+    } : null
   };
   
   // Guardar mensaje en array
@@ -389,7 +420,7 @@ async function findArduinoPort() {
   throw new Error('No se encontró puerto Arduino');
 }
 
-// Conectar a Arduino
+// UPDATED: Enhanced Arduino connection with new message handling
 async function connectToArduino() {
   try {
     if (isConnected) {
@@ -413,6 +444,13 @@ async function connectToArduino() {
         console.log('Puerto serial abierto sin resetear Arduino');
         isConnected = true;
         
+        // Send initial status request to Arduino
+        setTimeout(() => {
+          if (serialPort && isConnected) {
+            serialPort.write('GET_STATUS\n');
+          }
+        }, 1000);
+        
         parser.on('data', (data) => {
           const rawMessage = data.toString().trim();
           console.log('📨 Arduino:', rawMessage);
@@ -422,7 +460,21 @@ async function connectToArduino() {
           if (io) {
             io.emit('arduino_message', parsedMessage);
             
-            // IMPROVED: Handle test results with proper duration calculation
+            // Handle different message types
+            if (parsedMessage.type === 'TEST_START') {
+              // Start tracking when Arduino begins test
+              const testId = startTestTracking(
+                currentArduinoState.sku || 'UNKNOWN',
+                currentArduinoState.operator || 'Arduino'
+              );
+              
+              io.emit('test_started', {
+                testId,
+                cableCount: currentArduinoState.cableCount,
+                timestamp: parsedMessage.timestamp
+              });
+            }
+            
             if (parsedMessage.type === 'RESULT') {
               const testData = completeTestTracking(parsedMessage.content);
               
@@ -432,11 +484,21 @@ async function connectToArduino() {
                 duration: testData.duration,
                 sku: testData.sku,
                 operator: testData.operator,
-                testId: testData.testId
+                testId: testData.testId,
+                cableCount: currentArduinoState.cableCount,
+                channelResults: [...currentArduinoState.channelResults]
               };
               
-              console.log('📊 Enviando resultado de prueba:', testResult);
+              console.log('📊 Enviando resultado de prueba completo:', testResult);
               io.emit('test_result', testResult);
+            }
+            
+            if (parsedMessage.type === 'CHANNEL_RESULT') {
+              io.emit('channel_result', {
+                channel: parsedMessage.channelData?.channel,
+                result: parsedMessage.channelData?.result,
+                timestamp: parsedMessage.timestamp
+              });
             }
             
             if (['INFO', 'STATUS'].includes(parsedMessage.type)) {
@@ -494,30 +556,43 @@ function disconnectArduino() {
   return { success: false, message: 'No estaba conectado' };
 }
 
-// IMPROVED: Send command with test tracking
+// UPDATED: Enhanced command sending with new Arduino protocol
 function sendCommandToArduino(command) {
   if (!serialPort || !isConnected) {
     return { success: false, message: 'Arduino no conectado' };
   }
 
   try {
-    // NEW: Track START_TEST commands for duration calculation
+    // NEW: Handle different command formats for new Arduino protocol
     if (command.startsWith('START_TEST:')) {
       const parts = command.split(':');
       const sku = parts[1] || currentArduinoState.sku || 'UNKNOWN';
       const operator = parts[2] || currentArduinoState.operator || 'Arduino';
       
-      const testId = startTestTracking(sku, operator);
-      console.log(`🚀 Comando START_TEST enviado - Test ID: ${testId}`);
+      // Send SKU and operator first if available
+      if (sku && sku !== 'UNKNOWN') {
+        serialPort.write(`SET_SKU:${sku}\n`);
+        setTimeout(() => {
+          if (operator && operator !== 'Arduino') {
+            serialPort.write(`SET_OPERATOR:${operator}\n`);
+            setTimeout(() => {
+              serialPort.write('START_TEST\n');
+            }, 100);
+          } else {
+            serialPort.write('START_TEST\n');
+          }
+        }, 100);
+      } else {
+        serialPort.write('START_TEST\n');
+      }
+      
+      console.log(`🚀 Comando START_TEST enviado - SKU: ${sku}, Operador: ${operator}`);
+    } else {
+      // Send command directly for other commands
+      serialPort.write(command + '\n');
+      console.log('📤 Comando enviado:', command);
     }
     
-    serialPort.write(command + '\n', (err) => {
-      if (err) {
-        console.error('Error enviando comando:', err);
-        return { success: false, message: 'Error enviando comando' };
-      }
-      console.log('📤 Comando enviado:', command);
-    });
     return { success: true, message: 'Comando enviado' };
   } catch (error) {
     return { success: false, message: 'Error: ' + error.message };
@@ -531,7 +606,8 @@ app.get('/api/status', (req, res) => {
     clients: connectedClients,
     timestamp: getTimestamp(),
     arduinoState: currentArduinoState,
-    serverPort: serverPort
+    serverPort: serverPort,
+    activeTests: activeTests.size
   });
 });
 
@@ -545,6 +621,7 @@ app.post('/api/disconnect', (req, res) => {
   res.json(result);
 });
 
+// UPDATED: Enhanced start-test endpoint
 app.post('/api/start-test', (req, res) => {
   const { sku, operator } = req.body;
   
@@ -555,11 +632,16 @@ app.post('/api/start-test', (req, res) => {
     });
   }
 
+  // Update current state
+  currentArduinoState.sku = sku;
+  currentArduinoState.operator = operator;
+
   const command = `START_TEST:${sku}:${operator}`;
   const result = sendCommandToArduino(command);
   res.json(result);
 });
 
+// NEW: Enhanced command endpoint with Arduino protocol support
 app.post('/api/send-command', (req, res) => {
   const { command } = req.body;
   
@@ -572,6 +654,15 @@ app.post('/api/send-command', (req, res) => {
 
   const result = sendCommandToArduino(command);
   res.json(result);
+});
+
+// NEW: Get current Arduino state
+app.get('/api/arduino-state', (req, res) => {
+  res.json({
+    success: true,
+    state: currentArduinoState,
+    connected: isConnected
+  });
 });
 
 app.get('/api/arduino-logs', (req, res) => {
@@ -713,7 +804,7 @@ async function startServer() {
       }
     });
 
-    // WebSocket para comunicación en tiempo real
+    // WebSocket for comunicación en tiempo real
     io.on('connection', (socket) => {
       connectedClients++;
       console.log(`Cliente conectado. Total: ${connectedClients}`);
@@ -723,7 +814,8 @@ async function startServer() {
         connected: isConnected,
         timestamp: new Date().toISOString(),
         serverPort: serverPort,
-        activeTests: activeTests.size
+        activeTests: activeTests.size,
+        arduinoState: currentArduinoState
       });
 
       socket.on('disconnect', () => {
@@ -731,11 +823,34 @@ async function startServer() {
         console.log(`Cliente desconectado. Total: ${connectedClients}`);
       });
 
-      // Manejar comandos desde el cliente
+      // UPDATED: Enhanced WebSocket command handling
       socket.on('start_test', (data) => {
         const { sku, operator } = data;
+        currentArduinoState.sku = sku;
+        currentArduinoState.operator = operator;
         const command = `START_TEST:${sku}:${operator}`;
         sendCommandToArduino(command);
+      });
+
+      // NEW: Additional WebSocket events for Arduino control
+      socket.on('set_sku', (data) => {
+        const { sku } = data;
+        currentArduinoState.sku = sku;
+        sendCommandToArduino(`SET_SKU:${sku}`);
+      });
+
+      socket.on('set_operator', (data) => {
+        const { operator } = data;
+        currentArduinoState.operator = operator;
+        sendCommandToArduino(`SET_OPERATOR:${operator}`);
+      });
+
+      socket.on('stop_test', () => {
+        sendCommandToArduino('STOP_TEST');
+      });
+
+      socket.on('get_arduino_status', () => {
+        sendCommandToArduino('GET_STATUS');
       });
     });
 
