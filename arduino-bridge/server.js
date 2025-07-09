@@ -1,3 +1,4 @@
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -31,12 +32,70 @@ let currentArduinoState = {
 };
 let serverPort = 3001;
 
+// NEW: Test tracking for duration calculation
+let activeTests = new Map(); // Map to track active tests with start times
+let testSequenceCounter = 0;
+
 // Configuración del puerto serial
 const BAUD_RATE = 9600;
 
 // Función para crear timestamp
 function getTimestamp() {
   return new Date().toISOString();
+}
+
+// NEW: Function to generate unique test ID
+function generateTestId() {
+  testSequenceCounter++;
+  return `test_${Date.now()}_${testSequenceCounter}`;
+}
+
+// NEW: Function to start tracking a test
+function startTestTracking(sku, operator) {
+  const testId = generateTestId();
+  const startTime = new Date();
+  
+  activeTests.set(testId, {
+    sku,
+    operator,
+    startTime,
+    status: 'running'
+  });
+  
+  console.log(`📊 Test iniciado - ID: ${testId}, SKU: ${sku}, Operador: ${operator}`);
+  return testId;
+}
+
+// NEW: Function to complete test tracking and calculate duration
+function completeTestTracking(result) {
+  // Find the oldest active test (FIFO approach)
+  const oldestTestEntry = Array.from(activeTests.entries())
+    .sort(([,a], [,b]) => a.startTime.getTime() - b.startTime.getTime())[0];
+  
+  if (!oldestTestEntry) {
+    console.warn('⚠️ No hay pruebas activas para completar');
+    return {
+      duration: 0,
+      sku: currentArduinoState.sku || 'UNKNOWN',
+      operator: currentArduinoState.operator || 'Arduino'
+    };
+  }
+  
+  const [testId, testData] = oldestTestEntry;
+  const endTime = new Date();
+  const duration = (endTime.getTime() - testData.startTime.getTime()) / 1000;
+  
+  // Remove completed test from tracking
+  activeTests.delete(testId);
+  
+  console.log(`✅ Test completado - ID: ${testId}, Duración: ${duration}s, Resultado: ${result}`);
+  
+  return {
+    duration: parseFloat(duration.toFixed(2)),
+    sku: testData.sku,
+    operator: testData.operator,
+    testId
+  };
 }
 
 // Función para parsear mensajes del Arduino
@@ -356,19 +415,27 @@ async function connectToArduino() {
         
         parser.on('data', (data) => {
           const rawMessage = data.toString().trim();
-          console.log('Datos del Arduino:', rawMessage);
+          console.log('📨 Arduino:', rawMessage);
           
           const parsedMessage = parseArduinoMessage(rawMessage);
           
           if (io) {
             io.emit('arduino_message', parsedMessage);
             
+            // IMPROVED: Handle test results with proper duration calculation
             if (parsedMessage.type === 'RESULT') {
+              const testData = completeTestTracking(parsedMessage.content);
+              
               const testResult = {
                 result: parsedMessage.content,
                 timestamp: parsedMessage.timestamp,
-                duration: 0
+                duration: testData.duration,
+                sku: testData.sku,
+                operator: testData.operator,
+                testId: testData.testId
               };
+              
+              console.log('📊 Enviando resultado de prueba:', testResult);
               io.emit('test_result', testResult);
             }
             
@@ -417,25 +484,39 @@ function disconnectArduino() {
   if (serialPort && isConnected) {
     serialPort.close();
     isConnected = false;
-    console.log('Arduino desconectado');
+    
+    // Clear active tests on disconnect
+    activeTests.clear();
+    console.log('Arduino desconectado - Tests activos limpiados');
+    
     return { success: true, message: 'Desconectado' };
   }
   return { success: false, message: 'No estaba conectado' };
 }
 
-// Enviar comando al Arduino
+// IMPROVED: Send command with test tracking
 function sendCommandToArduino(command) {
   if (!serialPort || !isConnected) {
     return { success: false, message: 'Arduino no conectado' };
   }
 
   try {
+    // NEW: Track START_TEST commands for duration calculation
+    if (command.startsWith('START_TEST:')) {
+      const parts = command.split(':');
+      const sku = parts[1] || currentArduinoState.sku || 'UNKNOWN';
+      const operator = parts[2] || currentArduinoState.operator || 'Arduino';
+      
+      const testId = startTestTracking(sku, operator);
+      console.log(`🚀 Comando START_TEST enviado - Test ID: ${testId}`);
+    }
+    
     serialPort.write(command + '\n', (err) => {
       if (err) {
         console.error('Error enviando comando:', err);
         return { success: false, message: 'Error enviando comando' };
       }
-      console.log('Comando enviado:', command);
+      console.log('📤 Comando enviado:', command);
     });
     return { success: true, message: 'Comando enviado' };
   } catch (error) {
@@ -641,7 +722,8 @@ async function startServer() {
       socket.emit('status', {
         connected: isConnected,
         timestamp: new Date().toISOString(),
-        serverPort: serverPort
+        serverPort: serverPort,
+        activeTests: activeTests.size
       });
 
       socket.on('disconnect', () => {
@@ -675,6 +757,7 @@ async function startServer() {
       console.log('');
       console.log('🖨️  Sistema de impresión: PDF + Sistema operativo');
       console.log('🔧 Dependencias actualizadas y seguras');
+      console.log('⏱️  Sistema de medición de duración mejorado');
     });
 
   } catch (error) {

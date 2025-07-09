@@ -207,6 +207,98 @@ const QualityApp = () => {
     }
   };
 
+  const handleArduinoTestResult = async (arduinoResult: ArduinoTestResult) => {
+    if (!realTimeProcessing) return;
+    
+    console.log('📊 Resultado de prueba procesado:', {
+      result: arduinoResult.result,
+      duration: arduinoResult.duration,
+      sku: arduinoResult.sku,
+      operator: arduinoResult.operator,
+      testId: arduinoResult.testId
+    });
+    
+    const now = new Date();
+    
+    // Use the improved data from the server
+    const resultSku = arduinoResult.sku || currentSku || 'UNKNOWN';
+    const resultOperator = arduinoResult.operator || currentOperator || 'Arduino';
+    const resultDuration = arduinoResult.duration || 0;
+
+    // Calculate start time from end time and duration for consistency
+    const calculatedStartTime = resultDuration > 0 
+      ? new Date(now.getTime() - (resultDuration * 1000))
+      : testStartTime || new Date(now.getTime() - 1000);
+
+    const newResult: TestResult = {
+      id: arduinoResult.testId || Date.now().toString(),
+      sku: resultSku,
+      result: arduinoResult.result,
+      startTime: calculatedStartTime,
+      endTime: now,
+      duration: resultDuration,
+      operator: resultOperator,
+      date: getCurrentDateString()
+    };
+
+    console.log('✅ Test result creado:', newResult);
+
+    setTestResults(prev => [newResult, ...prev]);
+    setTotalProcessed(prev => prev + 1);
+    
+    if (arduinoResult.result === 'OK') {
+      setOkCount(prev => prev + 1);
+    }
+
+    // Reset test state
+    setIsTestRunning(false);
+    setTestStartTime(null);
+
+    // SKU validation and auto-creation
+    if (isDatabaseLoaded && resultSku && !skuDatabase.find(sku => sku.codigo === resultSku)) {
+      setCurrentNewSku(resultSku);
+      setShowNewSkuDialog(true);
+    }
+
+    // Code validation and auto-creation
+    if (isDatabaseLoaded && !seenCodigosRef.current.has(arduinoResult.result)) {
+      console.log(`🆕 Nuevo código detectado: ${arduinoResult.result}`);
+      
+      seenCodigosRef.current.add(arduinoResult.result);
+      
+      const newCodigo: CodigoGlobal = {
+        codigo: arduinoResult.result,
+        descripcion: '',
+        notas: '',
+        fechaCreacion: getCurrentDateString()
+      };
+      
+      setCodigosDatabase(prev => [...prev, newCodigo]);
+      
+      if (arduinoResult.result !== 'OK') {
+        setCurrentNewCodigo(newCodigo);
+        setShowNewCodigoDialog(true);
+      }
+    }
+
+    // Error handling for non-OK results
+    if (arduinoResult.result !== 'OK') {
+      const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result);
+      if (codigoInfo) {
+        setCurrentError(`Código: ${arduinoResult.result}\nDescripción: ${codigoInfo.descripcion}\nNotas: ${codigoInfo.notas}`);
+      } else {
+        setCurrentError(`Código detectado: ${arduinoResult.result}`);
+      }
+      setShowErrorDialog(true);
+    }
+
+    // Automatic label generation for complete packs
+    if (arduinoResult.result === 'OK' && (okCount + 1) % (currentStandardPack * 2) === 0) {
+      console.log(`📦 Alcanzado ${currentStandardPack * 2} cables OK, generando etiquetas automáticamente...`);
+      await generateLabel();
+    }
+  };
+
   const startTest = async () => {
     if (!currentSku || !currentOperator) {
       toast({
@@ -227,11 +319,14 @@ const QualityApp = () => {
     }
 
     try {
+      console.log(`🚀 Iniciando prueba - SKU: ${currentSku}, Operador: ${currentOperator}`);
+      
       setIsTestRunning(true);
       setTestStartTime(new Date());
       
       const result = await arduinoService.startTest(currentSku, currentOperator);
       if (!result.success) {
+        console.error('❌ Error iniciando prueba:', result.message);
         setIsTestRunning(false);
         setTestStartTime(null);
         toast({
@@ -239,8 +334,11 @@ const QualityApp = () => {
           description: result.message,
           variant: "destructive"
         });
+      } else {
+        console.log('✅ Prueba iniciada correctamente');
       }
     } catch (error) {
+      console.error('❌ Error en startTest:', error);
       setIsTestRunning(false);
       setTestStartTime(null);
       toast({
@@ -284,79 +382,6 @@ const QualityApp = () => {
         title: "Arduino",
         description: message.content,
       });
-    }
-  };
-
-  const handleArduinoTestResult = async (arduinoResult: ArduinoTestResult) => {
-    if (!realTimeProcessing) return;
-    
-    console.log('Resultado de prueba recibido:', arduinoResult);
-    
-    const now = new Date();
-    const startTime = testStartTime || new Date(now.getTime() - 2000);
-    const duration = arduinoResult.duration || (now.getTime() - startTime.getTime()) / 1000;
-
-    const newResult: TestResult = {
-      id: Date.now().toString(),
-      sku: currentSku || 'UNKNOWN',
-      result: arduinoResult.result,
-      startTime,
-      endTime: now,
-      duration,
-      operator: currentOperator || 'Arduino',
-      date: getCurrentDateString()
-    };
-
-    setTestResults(prev => [newResult, ...prev]);
-    setTotalProcessed(prev => prev + 1);
-    
-    if (arduinoResult.result === 'OK') {
-      setOkCount(prev => prev + 1);
-    }
-
-    setIsTestRunning(false);
-    setTestStartTime(null);
-
-    if (isDatabaseLoaded && currentSku && !skuDatabase.find(sku => sku.codigo === currentSku)) {
-      setCurrentNewSku(currentSku);
-      setShowNewSkuDialog(true);
-    }
-
-    if (isDatabaseLoaded && !seenCodigosRef.current.has(arduinoResult.result)) {
-      console.log(`Nuevo código detectado: ${arduinoResult.result}, agregando inmediatamente al Set y DB`);
-      
-      seenCodigosRef.current.add(arduinoResult.result);
-      
-      const newCodigo: CodigoGlobal = {
-        codigo: arduinoResult.result,
-        descripcion: '',
-        notas: '',
-        fechaCreacion: getCurrentDateString()
-      };
-      
-      setCodigosDatabase(prev => [...prev, newCodigo]);
-      
-      if (arduinoResult.result !== 'OK') {
-        setCurrentNewCodigo(newCodigo);
-        setShowNewCodigoDialog(true);
-      }
-    } else if (seenCodigosRef.current.has(arduinoResult.result)) {
-      console.log(`Código ya conocido: ${arduinoResult.result}, no agregando duplicado`);
-    }
-
-    if (arduinoResult.result !== 'OK') {
-      const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result);
-      if (codigoInfo) {
-        setCurrentError(`Código: ${arduinoResult.result}\nDescripción: ${codigoInfo.descripcion}\nNotas: ${codigoInfo.notas}`);
-      } else {
-        setCurrentError(`Código detectado: ${arduinoResult.result}`);
-      }
-      setShowErrorDialog(true);
-    }
-
-    if (arduinoResult.result === 'OK' && (okCount + 1) % (currentStandardPack * 2) === 0) {
-      console.log(`Alcanzado ${currentStandardPack * 2} cables OK, imprimiendo etiquetas automáticamente...`);
-      await generateLabel();
     }
   };
 

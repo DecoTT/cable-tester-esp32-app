@@ -4,6 +4,9 @@ export interface ArduinoTestResult {
   result: string;
   timestamp: string;
   duration: number;
+  sku?: string;
+  operator?: string;
+  testId?: string;
 }
 
 export interface ArduinoMessage {
@@ -17,6 +20,8 @@ export interface ArduinoStatus {
   connected: boolean;
   clients: number;
   timestamp: string;
+  serverPort?: number;
+  activeTests?: number;
 }
 
 class ArduinoService {
@@ -35,17 +40,17 @@ class ArduinoService {
         this.socket = io(this.baseURL);
 
         this.socket.on('connect', () => {
-          console.log('Conectado al servidor Arduino Bridge');
+          console.log('✅ Conectado al servidor Arduino Bridge');
           resolve();
         });
 
         this.socket.on('connect_error', (error) => {
-          console.error('Error conectando al servidor:', error);
+          console.error('❌ Error conectando al servidor:', error);
           reject(error);
         });
 
         this.socket.on('disconnect', () => {
-          console.log('Desconectado del servidor Arduino Bridge');
+          console.log('🔌 Desconectado del servidor Arduino Bridge');
           this.isConnected = false;
         });
 
@@ -108,8 +113,10 @@ class ArduinoService {
     return result;
   }
 
-  // Iniciar prueba
+  // IMPROVED: Start test with better logging
   async startTest(sku: string, operator: string): Promise<{ success: boolean; message: string }> {
+    console.log(`🚀 Iniciando prueba - SKU: ${sku}, Operador: ${operator}`);
+    
     const response = await fetch(`${this.baseURL}/api/start-test`, {
       method: 'POST',
       headers: {
@@ -122,7 +129,9 @@ class ArduinoService {
       throw new Error('Error iniciando prueba');
     }
     
-    return response.json();
+    const result = await response.json();
+    console.log(`📊 Respuesta del servidor:`, result);
+    return result;
   }
 
   // Enviar comando específico al Arduino
@@ -151,17 +160,40 @@ class ArduinoService {
     return response.json();
   }
 
-  // Escuchar resultados de pruebas (solo RESULT:)
+  // IMPROVED: Test result handler with better validation
   onTestResult(callback: (result: ArduinoTestResult) => void) {
     if (this.socket) {
-      this.socket.on('test_result', callback);
+      this.socket.on('test_result', (result: ArduinoTestResult) => {
+        console.log('📊 Resultado de prueba recibido:', {
+          result: result.result,
+          duration: result.duration,
+          sku: result.sku,
+          operator: result.operator,
+          testId: result.testId,
+          timestamp: result.timestamp
+        });
+        
+        // Validate result data
+        if (result.duration === undefined || result.duration < 0) {
+          console.warn('⚠️ Duración inválida en resultado:', result);
+        }
+        
+        callback(result);
+      });
     }
   }
 
-  // Escuchar TODOS los mensajes del Arduino
+  // IMPROVED: Arduino message handler with better filtering
   onArduinoMessage(callback: (message: ArduinoMessage) => void) {
     if (this.socket) {
-      this.socket.on('arduino_message', callback);
+      this.socket.on('arduino_message', (message: ArduinoMessage) => {
+        // Log only important message types to reduce noise
+        if (['RESULT', 'SKU', 'OPERATOR'].includes(message.type)) {
+          console.log(`📨 Arduino mensaje [${message.type}]:`, message.content);
+        }
+        
+        callback(message);
+      });
     }
   }
 
