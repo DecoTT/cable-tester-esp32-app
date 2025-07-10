@@ -11,7 +11,7 @@ import {
   Database, 
   FileText, 
   Calendar, 
-  Sync, 
+  RefreshCw, 
   AlertCircle,
   HardDrive,
   Clock
@@ -185,7 +185,7 @@ const FileManager: React.FC<FileManagerProps> = ({
             disabled={syncStatus === 'syncing'}
             className="flex items-center space-x-2"
           >
-            <Sync className={`w-4 h-4 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
             <span>Sincronizar BD</span>
           </Button>
         </div>
