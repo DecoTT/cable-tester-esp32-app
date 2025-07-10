@@ -294,10 +294,10 @@ app.post('/api/print-labels', async (req, res) => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // Generate PDF
+    // Generate PDF with improved layout
     const doc = new PDFDocument({ 
       size: [93.6, 72], // 1.3" x 1" in points
-      margin: 4
+      margin: 8 // Increased margin from 4 to 8
     });
     
     const stream = fs.createWriteStream(filepath);
@@ -310,10 +310,10 @@ app.post('/api/print-labels', async (req, res) => {
         doc.addPage();
       }
 
-      // Generate QR code
-      const qrData = `${label.sku}+${label.date}+${label.qty}+${label.lote}`;
+      // Generate QR code with dot separators instead of plus
+      const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
       const qrCodeDataURL = await QRCode.toDataURL(qrData, {
-        width: 40,
+        width: 24, // Reduced from 40 to 24
         margin: 0,
         color: { dark: '#000000', light: '#FFFFFF' }
       });
@@ -321,16 +321,20 @@ app.post('/api/print-labels', async (req, res) => {
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
-      // Add content to PDF
-      doc.fontSize(10).font('Helvetica-Bold').text(label.sku, 4, 4, { align: 'center', width: 85.6 });
-      doc.fontSize(6).font('Helvetica').text(`Fecha: ${label.date}`, 4, 16, { align: 'center', width: 85.6 });
-      doc.text(`Lote: ${label.lote}`, 4, 22, { align: 'center', width: 85.6 });
-      doc.text(`QTY: ${label.qty}`, 4, 28, { align: 'center', width: 85.6 });
+      // Add content to PDF with improved positioning
+      // SKU - Larger and at top
+      doc.fontSize(12).font('Helvetica-Bold').text(label.sku, 8, 6, { align: 'center', width: 77.6 });
       
-      // Add QR code
-      doc.image(qrBuffer, 26.8, 36, { width: 32, height: 32 });
+      // Information section with better spacing
+      doc.fontSize(8).font('Helvetica').text(`Fecha: ${label.date}`, 8, 20, { align: 'center', width: 77.6 });
+      doc.text(`Lote: ${label.lote}`, 8, 28, { align: 'center', width: 77.6 });
+      doc.text(`QTY: ${label.qty}`, 8, 36, { align: 'center', width: 77.6 });
       
-      doc.fontSize(4).text(qrData, 4, 70, { align: 'center', width: 85.6 });
+      // Add QR code - smaller and better positioned
+      doc.image(qrBuffer, 34.8, 44, { width: 24, height: 24 });
+      
+      // QR data text at bottom with dots
+      doc.fontSize(6).text(qrData, 8, 70, { align: 'center', width: 77.6 });
     }
 
     doc.end();
@@ -347,7 +351,7 @@ app.post('/api/print-labels', async (req, res) => {
       // Send to printer
       const printCommand = process.platform === 'win32' 
         ? `print /D:"${defaultPrinter}" "${filepath}"`
-        : `lp -d "${defaultPrinter}" "${filepath}" "${filepath}"`;
+        : `lp -d "${defaultPrinter}" "${filepath}"`;
 
       exec(printCommand, (error, stdout, stderr) => {
         if (error) {
@@ -356,12 +360,12 @@ app.post('/api/print-labels', async (req, res) => {
           console.log('✅ Archivo enviado a impresora');
         }
         
-        // Schedule cleanup with improved retry logic
-        cleanupTempFile(filepath, 5, 3000); // 5 retries, starting with 3 second delay
+        // Schedule cleanup with improved retry logic - increased delay for Windows
+        cleanupTempFile(filepath, 5, 8000); // 5 retries, starting with 8 second delay
       });
     } else {
       console.log('⚠️  No hay impresora configurada, PDF guardado solamente');
-      cleanupTempFile(filepath, 3, 5000); // Cleanup even without printing
+      cleanupTempFile(filepath, 3, 8000); // Cleanup even without printing
     }
 
     res.json({ 

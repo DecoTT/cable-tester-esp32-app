@@ -54,7 +54,7 @@ const makeRequest = async (endpoint: string, options: RequestInit = {}) => {
 };
 
 export const generateLabelHTML = (sku: string, date: string, qty: string, lote: string) => {
-  const qrData = `${sku}+${date}+${qty}+${lote}`;
+  const qrData = `${sku}.${date}.${qty}.${lote}`;
   
   return `
     <div style="
@@ -63,21 +63,21 @@ export const generateLabelHTML = (sku: string, date: string, qty: string, lote: 
       border: 1px solid #000;
       display: inline-block;
       margin: 2px;
-      padding: 4px;
+      padding: 8px;
       font-family: Arial, sans-serif;
       font-size: 8px;
       text-align: center;
       page-break-inside: avoid;
       vertical-align: top;
     ">
-      <div style="font-weight: bold; font-size: 10px; margin-bottom: 2px;">${sku}</div>
-      <div style="margin-bottom: 1px;">Fecha: ${date}</div>
-      <div style="margin-bottom: 1px;">Lote: ${lote}</div>
-      <div style="margin-bottom: 2px;">QTY: ${qty}</div>
+      <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">${sku}</div>
+      <div style="margin-bottom: 2px;">Fecha: ${date}</div>
+      <div style="margin-bottom: 2px;">Lote: ${lote}</div>
+      <div style="margin-bottom: 4px;">QTY: ${qty}</div>
       <div style="
         border: 1px solid #666;
-        width: 40px;
-        height: 40px;
+        width: 24px;
+        height: 24px;
         margin: 0 auto;
         display: flex;
         align-items: center;
@@ -85,7 +85,7 @@ export const generateLabelHTML = (sku: string, date: string, qty: string, lote: 
         font-size: 6px;
         background: #f0f0f0;
       ">QR</div>
-      <div style="font-size: 6px; margin-top: 1px; word-break: break-all;">
+      <div style="font-size: 6px; margin-top: 2px; word-break: break-all;">
         ${qrData}
       </div>
     </div>

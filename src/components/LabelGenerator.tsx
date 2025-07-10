@@ -53,7 +53,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   useEffect(() => {
     // Generar QR preview para etiqueta automática
     if (currentSku) {
-      const qrData = `${currentSku}+${getCurrentDateString()}+${standardPack}+${currentLote}`;
+      const qrData = `${currentSku}.${getCurrentDateString()}.${standardPack}.${currentLote}`;
       generateQRCode(qrData).then(qrCode => {
         if (qrCode) {
           setQrPreviewAuto(qrCode);
@@ -65,7 +65,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   useEffect(() => {
     // Generar QR preview para etiqueta manual
     if (customSku) {
-      const qrData = `${customSku}+${getCurrentDateString()}+${manualQty}+${customLote}`;
+      const qrData = `${customSku}.${getCurrentDateString()}.${manualQty}.${customLote}`;
       generateQRCode(qrData).then(qrCode => {
         if (qrCode) {
           setQrPreviewManual(qrCode);
@@ -247,21 +247,21 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   const LabelPreview = ({ sku, qty, lote, fecha, qrCode }: { sku: string, qty: string, lote: string, fecha: string, qrCode?: string }) => (
     <div className="border-2 border-dashed border-gray-300 p-4 bg-white rounded-lg">
       <div className="text-center space-y-2">
-        <div className="text-xs font-bold">{sku}</div>
+        <div className="text-sm font-bold">{sku}</div>
         <div className="text-xs">Fecha: {fecha}</div>
         <div className="text-xs">Lote: {lote}</div>
         <div className="text-xs">QTY: {qty}</div>
         <div className="flex justify-center">
           {qrCode ? (
-            <img src={qrCode} alt="QR Code" className="w-16 h-16" />
+            <img src={qrCode} alt="QR Code" className="w-12 h-12" />
           ) : (
-            <div className="w-16 h-16 border border-gray-400 bg-gray-100 flex items-center justify-center">
-              <QrCode className="w-8 h-8 text-gray-600" />
+            <div className="w-12 h-12 border border-gray-400 bg-gray-100 flex items-center justify-center">
+              <QrCode className="w-6 h-6 text-gray-600" />
             </div>
           )}
         </div>
         <div className="text-xs text-gray-500">
-          {`${sku}+${fecha}+${qty}+${lote}`}
+          {`${sku}.${fecha}.${qty}.${lote}`}
         </div>
       </div>
     </div>
@@ -509,7 +509,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
           
           <div className="mt-4 p-3 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-600">
-              <strong>Formato QR/DataMatrix:</strong> SKU+FECHA+QTY+LOTE
+              <strong>Formato QR/DataMatrix:</strong> SKU.FECHA.QTY.LOTE
             </p>
             <p className="text-xs text-blue-500 mt-1">
               Las etiquetas se imprimen usando la impresora: <strong>{selectedPrinter || 'No seleccionada'}</strong>
