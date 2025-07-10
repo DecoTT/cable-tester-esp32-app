@@ -1,13 +1,15 @@
 
 import React from 'react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  Play, 
-  CheckCircle,
-  Package,
-  Code,
-  Printer,
-  Download,
-  User
+  FlaskConical, 
+  BarChart3, 
+  Package, 
+  AlertTriangle, 
+  Tags, 
+  FileText, 
+  User,
+  HardDrive
 } from 'lucide-react';
 
 interface NavigationTabsProps {
@@ -16,32 +18,51 @@ interface NavigationTabsProps {
 }
 
 const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setActiveTab }) => {
-  const tabs = [
-    { id: 'testing', label: 'Pruebas', icon: Play },
-    { id: 'results', label: 'Resultados', icon: CheckCircle },
-    { id: 'skus', label: 'SKUs', icon: Package },
-    { id: 'codigos', label: 'Códigos', icon: Code },
-    { id: 'labels', label: 'Etiquetas', icon: Printer },
-    { id: 'logs', label: 'Logs', icon: Download },
-    { id: 'operator', label: 'Operador', icon: User }
-  ];
-
   return (
-    <div className="flex border-b">
-      {tabs.map(tab => (
-        <button
-          key={tab.id}
-          onClick={() => setActiveTab(tab.id)}
-          className={`flex items-center space-x-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === tab.id 
-              ? 'border-blue-500 text-blue-600 bg-blue-50' 
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          <tab.icon className="w-4 h-4" />
-          <span>{tab.label}</span>
-        </button>
-      ))}
+    <div className="border-b">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-8 h-auto p-1">
+          <TabsTrigger value="testing" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <FlaskConical className="w-4 h-4" />
+            <span className="text-xs">Pruebas</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="results" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <BarChart3 className="w-4 h-4" />
+            <span className="text-xs">Resultados</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="skus" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <Package className="w-4 h-4" />
+            <span className="text-xs">SKUs</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="codigos" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-xs">Códigos</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="labels" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <Tags className="w-4 h-4" />
+            <span className="text-xs">Etiquetas</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="logs" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <FileText className="w-4 h-4" />
+            <span className="text-xs">Logs</span>
+          </TabsTrigger>
+          
+          <TabsTrigger value="operator" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <User className="w-4 h-4" />
+            <span className="text-xs">Operador</span>
+          </TabsTrigger>
+
+          <TabsTrigger value="files" className="flex flex-col items-center space-y-1 p-3 h-auto">
+            <HardDrive className="w-4 h-4" />
+            <span className="text-xs">Archivos</span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
     </div>
   );
 };

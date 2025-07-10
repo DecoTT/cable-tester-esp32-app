@@ -16,10 +16,12 @@ import CodigosDatabase from './CodigosDatabase';
 import LabelGenerator from './LabelGenerator';
 import LogsViewer from './LogsViewer';
 import OperatorManager from './OperatorManager';
+import FileManager from './FileManager';
 import AppFooter from './AppFooter';
 import { ArduinoMessage, arduinoService, ArduinoTestResult } from '@/services/arduinoService';
 import ArduinoMessagesPanel from './ArduinoMessagesPanel';
 import { printLabels, incrementLote } from '@/utils/printUtils';
+import { fileService } from '@/services/fileService';
 
 const QualityApp = () => {
   const [isConnected, setIsConnected] = useState(false);
@@ -51,6 +53,7 @@ const QualityApp = () => {
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
   const seenCodigosRef = useRef<Set<string>>(new Set());
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -75,6 +78,31 @@ const QualityApp = () => {
       setIsDatabaseLoaded(true);
     }, 100);
   }, []);
+
+  useEffect(() => {
+    if (isDatabaseLoaded && serverConnected) {
+      scheduleDatabaseSync();
+    }
+  }, [skuDatabase, codigosDatabase, loteDatabase, isDatabaseLoaded, serverConnected]);
+
+  const scheduleDatabaseSync = () => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+    
+    syncTimeoutRef.current = setTimeout(async () => {
+      try {
+        await Promise.all([
+          fileService.syncSkuDatabase(skuDatabase),
+          fileService.syncCodigosDatabase(codigosDatabase),
+          fileService.syncLotesDatabase(loteDatabase)
+        ]);
+        console.log('📊 Databases auto-synced with server');
+      } catch (error) {
+        console.error('❌ Auto-sync error:', error);
+      }
+    }, 5000); // Sync after 5 seconds of no changes
+  };
 
   useEffect(() => {
     localStorage.setItem('quality_skus', JSON.stringify(skuDatabase));
@@ -134,6 +162,9 @@ const QualityApp = () => {
     initializeArduinoService();
 
     return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
       arduinoService.disconnectSocket();
     };
   }, []);
@@ -220,12 +251,10 @@ const QualityApp = () => {
     
     const now = new Date();
     
-    // Use the improved data from the server
     const resultSku = arduinoResult.sku || currentSku || 'UNKNOWN';
     const resultOperator = arduinoResult.operator || currentOperator || 'Arduino';
     const resultDuration = arduinoResult.duration || 0;
 
-    // Calculate start time from end time and duration for consistency
     const calculatedStartTime = resultDuration > 0 
       ? new Date(now.getTime() - (resultDuration * 1000))
       : testStartTime || new Date(now.getTime() - 1000);
@@ -246,14 +275,12 @@ const QualityApp = () => {
     setTestResults(prev => [newResult, ...prev]);
     setTotalProcessed(prev => prev + 1);
     
-    // Handle OK results with improved counting logic
     if (arduinoResult.result === 'OK') {
       const newOkCount = okCount + 1;
       setOkCount(newOkCount);
       
       console.log(`📈 Conteo actualizado: ${newOkCount} cables OK (SP: ${currentStandardPack}, Threshold: ${currentStandardPack * 2})`);
       
-      // Check for automatic label printing AFTER updating count
       if (newOkCount % (currentStandardPack * 2) === 0) {
         console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
         console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
@@ -264,17 +291,14 @@ const QualityApp = () => {
       }
     }
 
-    // Reset test state
     setIsTestRunning(false);
     setTestStartTime(null);
 
-    // SKU validation and auto-creation
     if (isDatabaseLoaded && resultSku && !skuDatabase.find(sku => sku.codigo === resultSku)) {
       setCurrentNewSku(resultSku);
       setShowNewSkuDialog(true);
     }
 
-    // Code validation and auto-creation
     if (isDatabaseLoaded && !seenCodigosRef.current.has(arduinoResult.result)) {
       console.log(`🆕 Nuevo código detectado: ${arduinoResult.result}`);
       
@@ -295,7 +319,6 @@ const QualityApp = () => {
       }
     }
 
-    // Error handling for non-OK results
     if (arduinoResult.result !== 'OK') {
       const codigoInfo = codigosDatabase.find(codigo => codigo.codigo === arduinoResult.result);
       if (codigoInfo) {
@@ -440,7 +463,6 @@ const QualityApp = () => {
   const generateAutomaticLabels = async () => {
     console.log(`🏭 Iniciando generación automática de etiquetas para lote ${currentLote}`);
     
-    // Generate both labels in a single call to avoid timing issues
     const labelsToGenerate = [
       {
         sku: currentSku,
@@ -500,7 +522,6 @@ const QualityApp = () => {
       });
     }
 
-    // Increment lote for next batch
     const nextLote = incrementLote(currentLote);
     setCurrentLote(nextLote);
     console.log(`🔄 Lote incrementado para próximo batch: ${nextLote}`);
@@ -626,6 +647,11 @@ const QualityApp = () => {
     });
   };
 
+  const handleDatabaseSync = () => {
+    console.log('🔄 Manual database sync triggered');
+    scheduleDatabaseSync();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -711,6 +737,15 @@ const QualityApp = () => {
                 currentOperator={currentOperator}
                 setCurrentOperator={setCurrentOperator}
                 results={testResults}
+              />
+            )}
+
+            {activeTab === 'files' && (
+              <FileManager
+                skuDatabase={skuDatabase}
+                codigosDatabase={codigosDatabase}
+                loteDatabase={loteDatabase}
+                onDatabaseSync={handleDatabaseSync}
               />
             )}
           </div>
