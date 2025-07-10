@@ -848,7 +848,10 @@ const QualityApp = () => {
           </DialogContent>
         </Dialog>
 
-        <AppFooter />
+        <AppFooter 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+        />
       </div>
     </div>
   );

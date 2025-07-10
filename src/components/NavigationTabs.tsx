@@ -7,9 +7,7 @@ import {
   Package, 
   AlertTriangle, 
   Tags, 
-  FileText, 
-  User,
-  HardDrive
+  FileText
 } from 'lucide-react';
 
 interface NavigationTabsProps {
@@ -21,45 +19,35 @@ const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setActiveTab
   return (
     <div className="border-b">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-8 h-auto p-1">
-          <TabsTrigger value="testing" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <FlaskConical className="w-4 h-4" />
-            <span className="text-xs">Pruebas</span>
+        <TabsList className="grid w-full grid-cols-6 h-auto p-2">
+          <TabsTrigger value="testing" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <FlaskConical className="w-5 h-5" />
+            <span className="text-sm font-medium">Pruebas</span>
           </TabsTrigger>
           
-          <TabsTrigger value="results" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <BarChart3 className="w-4 h-4" />
-            <span className="text-xs">Resultados</span>
+          <TabsTrigger value="results" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <BarChart3 className="w-5 h-5" />
+            <span className="text-sm font-medium">Resultados</span>
           </TabsTrigger>
           
-          <TabsTrigger value="skus" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <Package className="w-4 h-4" />
-            <span className="text-xs">SKUs</span>
+          <TabsTrigger value="skus" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <Package className="w-5 h-5" />
+            <span className="text-sm font-medium">SKUs</span>
           </TabsTrigger>
           
-          <TabsTrigger value="codigos" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <AlertTriangle className="w-4 h-4" />
-            <span className="text-xs">Códigos</span>
+          <TabsTrigger value="codigos" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <AlertTriangle className="w-5 h-5" />
+            <span className="text-sm font-medium">Códigos</span>
           </TabsTrigger>
           
-          <TabsTrigger value="labels" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <Tags className="w-4 h-4" />
-            <span className="text-xs">Etiquetas</span>
+          <TabsTrigger value="labels" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <Tags className="w-5 h-5" />
+            <span className="text-sm font-medium">Etiquetas</span>
           </TabsTrigger>
           
-          <TabsTrigger value="logs" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <FileText className="w-4 h-4" />
-            <span className="text-xs">Logs</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="operator" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <User className="w-4 h-4" />
-            <span className="text-xs">Operador</span>
-          </TabsTrigger>
-
-          <TabsTrigger value="files" className="flex flex-col items-center space-y-1 p-3 h-auto">
-            <HardDrive className="w-4 h-4" />
-            <span className="text-xs">Archivos</span>
+          <TabsTrigger value="logs" className="flex flex-col items-center space-y-2 p-4 h-auto">
+            <FileText className="w-5 h-5" />
+            <span className="text-sm font-medium">Logs</span>
           </TabsTrigger>
         </TabsList>
       </Tabs>
