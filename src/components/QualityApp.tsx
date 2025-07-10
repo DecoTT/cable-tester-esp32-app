@@ -246,8 +246,22 @@ const QualityApp = () => {
     setTestResults(prev => [newResult, ...prev]);
     setTotalProcessed(prev => prev + 1);
     
+    // Handle OK results with improved counting logic
     if (arduinoResult.result === 'OK') {
-      setOkCount(prev => prev + 1);
+      const newOkCount = okCount + 1;
+      setOkCount(newOkCount);
+      
+      console.log(`📈 Conteo actualizado: ${newOkCount} cables OK (SP: ${currentStandardPack}, Threshold: ${currentStandardPack * 2})`);
+      
+      // Check for automatic label printing AFTER updating count
+      if (newOkCount % (currentStandardPack * 2) === 0) {
+        console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
+        console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
+        await generateAutomaticLabels();
+      } else {
+        const remainingForNextPrint = (currentStandardPack * 2) - (newOkCount % (currentStandardPack * 2));
+        console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más`);
+      }
     }
 
     // Reset test state
@@ -290,12 +304,6 @@ const QualityApp = () => {
         setCurrentError(`Código detectado: ${arduinoResult.result}`);
       }
       setShowErrorDialog(true);
-    }
-
-    // Automatic label generation for complete packs
-    if (arduinoResult.result === 'OK' && (okCount + 1) % (currentStandardPack * 2) === 0) {
-      console.log(`📦 Alcanzado ${currentStandardPack * 2} cables OK, generando etiquetas automáticamente...`);
-      await generateLabel();
     }
   };
 
@@ -429,7 +437,10 @@ const QualityApp = () => {
     setCurrentNewCodigo(null);
   };
 
-  const generateLabel = async () => {
+  const generateAutomaticLabels = async () => {
+    console.log(`🏭 Iniciando generación automática de etiquetas para lote ${currentLote}`);
+    
+    // Generate both labels in a single call to avoid timing issues
     const labelsToGenerate = [
       {
         sku: currentSku,
@@ -453,6 +464,7 @@ const QualityApp = () => {
           ? { ...l, cantidad: l.cantidad + (currentStandardPack * 2), buenos: l.buenos + (currentStandardPack * 2), procesados: l.procesados + (currentStandardPack * 2) }
           : l
       ));
+      console.log(`📝 Lote existente ${currentLote} actualizado con ${currentStandardPack * 2} cables adicionales`);
     } else {
       const newLote: Lote = {
         id: currentLote,
@@ -465,27 +477,38 @@ const QualityApp = () => {
         procesados: currentStandardPack * 2
       };
       setLoteDatabase(prev => [...prev, newLote]);
-      console.log('Lote registrado:', newLote);
+      console.log('📋 Nuevo lote registrado:', newLote);
     }
 
     try {
+      console.log(`🖨️  Enviando ${labelsToGenerate.length} etiquetas para impresión automática...`);
       await printLabels(labelsToGenerate);
       
+      console.log(`✅ Impresión automática exitosa - Lote ${currentLote}`);
+      
       toast({
-        title: "Etiquetas impresas automáticamente",
-        description: `2 etiquetas para lote ${currentLote} - ${currentStandardPack * 2} cables OK total`,
+        title: "🤖 Impresión Automática Completada",
+        description: `2 etiquetas impresas automáticamente para lote ${currentLote} - Total: ${currentStandardPack * 2} cables OK`,
       });
       
     } catch (error) {
-      console.error('Error imprimiendo etiquetas:', error);
+      console.error('❌ Error en impresión automática:', error);
       toast({
-        title: "Lote registrado - Error de impresión",
-        description: `Lote ${currentLote} registrado correctamente. Error: ${(error as Error).message}`,
+        title: "⚠️ Lote registrado - Error de impresión automática",
+        description: `Lote ${currentLote} registrado correctamente. Error de impresión: ${(error as Error).message}`,
         variant: "destructive"
       });
     }
 
-    setCurrentLote(incrementLote(currentLote));
+    // Increment lote for next batch
+    const nextLote = incrementLote(currentLote);
+    setCurrentLote(nextLote);
+    console.log(`🔄 Lote incrementado para próximo batch: ${nextLote}`);
+  };
+
+  const generateLabel = async () => {
+    console.log(`🏭 Generación manual de etiquetas para lote ${currentLote}`);
+    await generateAutomaticLabels();
   };
 
   const generatePartialLabel = async (partialCount: number) => {
