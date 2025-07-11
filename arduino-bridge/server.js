@@ -27,6 +27,14 @@ let serialParser = null;
 let connectedClients = 0;
 let activeTests = new Map();
 let defaultPrinter = null;
+let arduinoLogs = [];
+let currentArduinoState = {
+  sku: '',
+  operator: '',
+  status: 'Disconnected',
+  cableCount: 0,
+  channelResults: []
+};
 
 // Database and logging directories
 const DATABASE_DIR = path.join(__dirname, 'database');
@@ -159,6 +167,130 @@ const writeLabelLog = (labelData, count = 1) => {
   }
 };
 
+// Function to add Arduino log with timestamp
+const addArduinoLog = (type, content, raw = null) => {
+  const logEntry = {
+    type,
+    content,
+    timestamp: new Date().toISOString(),
+    raw: raw || content
+  };
+  
+  arduinoLogs.push(logEntry);
+  
+  // Keep only last 1000 logs to prevent memory issues
+  if (arduinoLogs.length > 1000) {
+    arduinoLogs = arduinoLogs.slice(-1000);
+  }
+  
+  // Emit log to connected clients
+  io.emit('arduino_message', logEntry);
+  
+  return logEntry;
+};
+
+// Enhanced Arduino message parser
+const parseArduinoMessage = (data) => {
+  const message = data.toString().trim();
+  console.log('📨 Arduino:', message);
+  
+  // Parse different message types
+  if (message.startsWith('INFO:')) {
+    const content = message.substring(5).trim();
+    addArduinoLog('INFO', content, message);
+    io.emit('arduino_info', { type: 'INFO', content, timestamp: new Date().toISOString() });
+    
+  } else if (message.startsWith('STATUS:')) {
+    const content = message.substring(7).trim();
+    currentArduinoState.status = content;
+    addArduinoLog('STATUS', content, message);
+    io.emit('arduino_status', currentArduinoState);
+    
+  } else if (message.startsWith('SKU:')) {
+    const content = message.substring(4).trim();
+    currentArduinoState.sku = content;
+    addArduinoLog('SKU', content, message);
+    io.emit('arduino_message', { type: 'SKU', content, timestamp: new Date().toISOString(), raw: message });
+    
+  } else if (message.startsWith('OPERATOR:')) {
+    const content = message.substring(9).trim();
+    currentArduinoState.operator = content;
+    addArduinoLog('OPERATOR', content, message);
+    io.emit('arduino_message', { type: 'OPERATOR', content, timestamp: new Date().toISOString(), raw: message });
+    
+  } else if (message.startsWith('CHANNEL:')) {
+    const content = message.substring(8).trim();
+    const parts = content.split(':');
+    if (parts.length >= 2) {
+      const channel = parseInt(parts[0]);
+      const result = parts[1];
+      
+      // Update channel results
+      while (currentArduinoState.channelResults.length <= channel) {
+        currentArduinoState.channelResults.push('PENDING');
+      }
+      currentArduinoState.channelResults[channel] = result;
+      
+      addArduinoLog('CHANNEL_RESULT', content, message);
+      io.emit('channel_result', { 
+        channel, 
+        result, 
+        timestamp: new Date().toISOString() 
+      });
+      io.emit('arduino_message', { 
+        type: 'CHANNEL_RESULT', 
+        content, 
+        timestamp: new Date().toISOString(), 
+        raw: message,
+        channelData: { channel, result }
+      });
+    }
+    
+  } else if (message.startsWith('RESULT:')) {
+    const content = message.substring(7).trim();
+    addArduinoLog('RESULT', content, message);
+    
+    // Find active test and complete it
+    for (let [testId, testData] of activeTests) {
+      if (testData.sku === currentArduinoState.sku && testData.operator === currentArduinoState.operator) {
+        const duration = (Date.now() - testData.startTime) / 1000;
+        
+        const testResult = {
+          result: content,
+          timestamp: new Date().toISOString(),
+          duration: parseFloat(duration.toFixed(2)),
+          sku: testData.sku,
+          operator: testData.operator,
+          testId: testId,
+          cableCount: currentArduinoState.channelResults.length,
+          channelResults: [...currentArduinoState.channelResults]
+        };
+        
+        console.log(`✅ Test completado - ID: ${testId}, Duración: ${duration.toFixed(3)}s, Resultado: ${content}`);
+        console.log('📊 Enviando resultado de prueba completo:', testResult);
+        
+        // Write test log
+        writeTestLog(testResult);
+        
+        // Emit test result
+        io.emit('test_result', testResult);
+        io.emit('arduinoTestResult', testResult);
+        
+        // Clean up
+        activeTests.delete(testId);
+        break;
+      }
+    }
+    
+    io.emit('arduino_message', { type: 'RESULT', content, timestamp: new Date().toISOString(), raw: message });
+    
+  } else {
+    // Generic message
+    addArduinoLog('UNKNOWN', message, message);
+    io.emit('arduino_message', { type: 'UNKNOWN', content: message, timestamp: new Date().toISOString(), raw: message });
+  }
+};
+
 // Function to detect Arduino ports automatically
 const detectArduinoPorts = async () => {
   try {
@@ -255,60 +387,40 @@ const connectToArduino = async (serialPortPath = null) => {
     port.on('open', () => {
       console.log(`✅ Conectado a Arduino en ${targetPort}`);
       writeSystemLog('ARDUINO_CONNECT', 'Arduino connected successfully', { port: targetPort, autoDetected: !serialPortPath });
+      
+      // Reset Arduino state
+      currentArduinoState = {
+        sku: '',
+        operator: '',
+        status: 'Connected',
+        cableCount: 0,
+        channelResults: []
+      };
+      
+      io.emit('arduinoConnected', { connected: true, port: targetPort });
       resolve({ success: true, message: `Conectado a Arduino en ${targetPort}`, port: targetPort });
     });
 
     port.on('error', (err) => {
       console.error(`❌ Error en el puerto serie ${targetPort}:`, err.message);
       writeSystemLog('ARDUINO_ERROR', 'Arduino connection error', { error: err.message, port: targetPort });
-      
-      // If auto-detection failed, try other ports
-      if (!serialPortPath) {
-        console.log('🔄 Auto-detection failed, trying next available port...');
-        // You could implement retry logic here if needed
-      }
-      
       reject({ success: false, message: `Error conectando a Arduino en ${targetPort}: ${err.message}` });
     });
 
-    serialParser.on('data', (data) => {
-      console.log('Data from Arduino:', data);
-      io.emit('arduinoData', data);
-
-      // Detect specific messages and emit them as events
-      if (data.startsWith('INFO:')) {
-        io.emit('arduinoInfo', { type: 'INFO', content: data.substring(5).trim() });
-      } else if (data.startsWith('STATUS:')) {
-        try {
-          const status = JSON.parse(data.substring(7).trim());
-          io.emit('arduinoStatus', status);
-        } catch (e) {
-          console.error('Error parsing status:', e);
-        }
-      } else if (data.startsWith('TEST_RESULT:')) {
-        try {
-          const testResult = JSON.parse(data.substring(12).trim());
-          
-          // Write automatic test log
-          writeTestLog(testResult);
-          
-          io.emit('arduinoTestResult', testResult);
-        } catch (e) {
-          console.error('Error parsing test result:', e);
-        }
-      } else if (data.startsWith('MESSAGE:')) {
-        io.emit('arduinoMessage', { type: 'MESSAGE', content: data.substring(8).trim() });
-      } else if (data.startsWith('SKU:')) {
-        io.emit('arduinoMessage', { type: 'SKU', content: data.substring(4).trim() });
-      } else if (data.startsWith('OPERATOR:')) {
-        io.emit('arduinoMessage', { type: 'OPERATOR', content: data.substring(9).trim() });
-      }
-    });
+    serialParser.on('data', parseArduinoMessage);
 
     port.on('close', () => {
       console.log('Se ha cerrado la conexión con Arduino');
       writeSystemLog('ARDUINO_DISCONNECT', 'Arduino connection closed');
-      io.emit('arduinoDisconnected', { error: 'Conexión cerrada por Arduino' });
+      
+      // Clean up active tests
+      if (activeTests.size > 0) {
+        console.log(`🧹 Limpiando ${activeTests.size} tests activos`);
+        activeTests.clear();
+      }
+      
+      currentArduinoState.status = 'Disconnected';
+      io.emit('arduinoDisconnected', { connected: false, error: 'Conexión cerrada por Arduino' });
       port = null;
       serialParser = null;
     });
@@ -348,7 +460,7 @@ const sendDataToArduino = (data) => {
           writeSystemLog('ARDUINO_SEND_ERROR', 'Error sending data to Arduino', { data, error: err.message });
           reject({ success: false, message: `Error enviando datos a Arduino: ${err.message}` });
         } else {
-          console.log('Datos enviados a Arduino:', data);
+          console.log('📤 Datos enviados a Arduino:', data);
           writeSystemLog('ARDUINO_SEND', 'Data sent to Arduino', { data });
           resolve({ success: true, message: 'Datos enviados a Arduino correctamente' });
         }
@@ -418,6 +530,30 @@ app.post('/api/send-data', async (req, res) => {
   }
 });
 
+// API endpoint to send command to Arduino
+app.post('/api/send-command', async (req, res) => {
+  const { command } = req.body;
+  if (!command) {
+    return res.status(400).json({ success: false, message: 'No command provided' });
+  }
+  try {
+    const result = await sendDataToArduino(command);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// API endpoint to get Arduino logs
+app.get('/api/arduino-logs', (req, res) => {
+  res.json({ success: true, logs: arduinoLogs });
+});
+
+// API endpoint to get Arduino state
+app.get('/api/arduino-state', (req, res) => {
+  res.json({ success: true, state: currentArduinoState });
+});
+
 // API endpoint to start a test
 app.post('/api/start-test', (req, res) => {
   const { sku, operator } = req.body;
@@ -425,19 +561,41 @@ app.post('/api/start-test', (req, res) => {
     return res.status(400).json({ success: false, message: 'SKU and operator are required' });
   }
 
-  const testId = Date.now();
-  activeTests.set(testId, { sku, operator });
+  const testId = `test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const testData = {
+    sku,
+    operator,
+    startTime: Date.now(),
+    testId
+  };
+  
+  activeTests.set(testId, testData);
+
+  // Reset channel results for new test
+  currentArduinoState.channelResults = [];
+  currentArduinoState.sku = sku;
+  currentArduinoState.operator = operator;
 
   // Construct the command string
   const command = `START_TEST:${sku}:${operator}:${testId}`;
 
+  console.log(`🚀 Comando START_TEST enviado - SKU: ${sku}, Operador: ${operator}`);
+  console.log(`📊 Test iniciado - ID: ${testId}, SKU: ${sku}, Operador: ${operator}`);
   writeSystemLog('TEST_START', 'Test started', { sku, operator, testId });
 
   sendDataToArduino(command)
     .then(result => {
+      // Emit test started event
+      io.emit('test_started', {
+        testId,
+        cableCount: 0, // Will be updated as channels are tested
+        timestamp: new Date().toISOString()
+      });
+      
       res.json({ success: true, message: 'Test started', testId: testId });
     })
     .catch(error => {
+      activeTests.delete(testId);
       res.status(500).json({ success: false, message: error.message });
     });
 });
@@ -445,17 +603,16 @@ app.post('/api/start-test', (req, res) => {
 // API endpoint to stop a test
 app.post('/api/stop-test', (req, res) => {
   const { testId } = req.body;
-  if (!testId) {
-    return res.status(400).json({ success: false, message: 'Test ID is required' });
-  }
-
-  if (!activeTests.has(testId)) {
-    return res.status(404).json({ success: false, message: 'Test ID not found' });
+  
+  if (testId && activeTests.has(testId)) {
+    activeTests.delete(testId);
+  } else {
+    // Stop any active test
+    activeTests.clear();
   }
 
   sendDataToArduino('STOP_TEST')
     .then(result => {
-      activeTests.delete(testId);
       writeSystemLog('TEST_STOP', 'Test stopped', { testId });
       res.json({ success: true, message: 'Test stopped' });
     })
@@ -867,15 +1024,37 @@ app.post('/api/generate-qr', async (req, res) => {
   }
 });
 
+// Display server info on startup
+const displayServerInfo = () => {
+  console.log('✅ Servidor Arduino Bridge ejecutándose en puerto 3001');
+  console.log('📡 Endpoints disponibles:');
+  console.log('   GET  http://localhost:3001/api/status');
+  console.log('   POST http://localhost:3001/api/connect');
+  console.log('   POST http://localhost:3001/api/disconnect');
+  console.log('   POST http://localhost:3001/api/start-test');
+  console.log('   POST http://localhost:3001/api/send-command');
+  console.log('   GET  http://localhost:3001/api/arduino-logs');
+  console.log('   GET  http://localhost:3001/api/arduino-state');
+  console.log('   POST http://localhost:3001/api/print-labels');
+  console.log('   GET  http://localhost:3001/api/printers');
+  console.log('   POST http://localhost:3001/api/set-default-printer');
+  console.log('   POST http://localhost:3001/api/generate-qr');
+  console.log('🔌 WebSocket: ws://localhost:3001');
+  console.log('');
+  console.log('🖨️  Sistema de impresión: PDF + Sistema operativo');
+  console.log('🔧 Dependencias actualizadas y seguras');
+  console.log('⏱️  Sistema de medición de duración mejorado');
+};
+
 io.on('connection', (socket) => {
   connectedClients++;
-  console.log('Cliente conectado:', socket.id, `(${connectedClients} clientes conectados)`);
+  console.log(`Cliente conectado. Total: ${connectedClients}`);
   writeSystemLog('CLIENT_CONNECT', 'Client connected', { socketId: socket.id, totalClients: connectedClients });
   io.emit('clientConnected', { connected: true, clients: connectedClients });
 
   socket.on('disconnect', () => {
     connectedClients--;
-    console.log('Cliente desconectado:', socket.id, `(${connectedClients} clientes conectados)`);
+    console.log(`Cliente desconectado. Total: ${connectedClients}`);
     writeSystemLog('CLIENT_DISCONNECT', 'Client disconnected', { socketId: socket.id, totalClients: connectedClients });
     io.emit('clientDisconnected', { connected: false, clients: connectedClients });
   });
@@ -883,6 +1062,6 @@ io.on('connection', (socket) => {
 
 const PORT = 3001;
 server.listen(PORT, () => {
-  console.log(`Servidor Arduino Bridge corriendo en el puerto ${PORT}`);
+  displayServerInfo();
   writeSystemLog('SERVER_START', 'Arduino Bridge server started', { port: PORT });
 });
