@@ -159,6 +159,36 @@ const writeLabelLog = (labelData, count = 1) => {
   }
 };
 
+// Function to detect Arduino ports automatically
+const detectArduinoPorts = async () => {
+  try {
+    const ports = await SerialPort.list();
+    console.log('🔍 Detected serial ports:', ports.map(p => `${p.path} (${p.manufacturer || 'Unknown'})`));
+    
+    // Filter for likely Arduino ports
+    const arduinoPorts = ports.filter(port => {
+      const manufacturer = (port.manufacturer || '').toLowerCase();
+      const path = (port.path || '').toLowerCase();
+      const pnpId = (port.pnpId || '').toLowerCase();
+      
+      return manufacturer.includes('arduino') || 
+             manufacturer.includes('ftdi') ||
+             manufacturer.includes('ch340') ||
+             manufacturer.includes('cp210') ||
+             path.includes('arduino') ||
+             pnpId.includes('arduino') ||
+             pnpId.includes('ch340') ||
+             pnpId.includes('cp210');
+    });
+
+    console.log('🎯 Potential Arduino ports:', arduinoPorts.map(p => `${p.path} (${p.manufacturer || 'Unknown'})`));
+    return arduinoPorts;
+  } catch (error) {
+    console.error('Error detecting Arduino ports:', error);
+    return [];
+  }
+};
+
 // Function to list available serial ports
 const listSerialPorts = async () => {
   try {
@@ -178,30 +208,67 @@ const listSerialPorts = async () => {
 };
 
 // Function to connect to Arduino
-const connectToArduino = async (serialPortPath) => {
-  return new Promise((resolve, reject) => {
+const connectToArduino = async (serialPortPath = null) => {
+  return new Promise(async (resolve, reject) => {
     if (port && port.isOpen) {
       resolve({ success: false, message: 'Ya hay un puerto serie abierto. Desconéctalo primero.' });
       return;
     }
 
+    let targetPort = serialPortPath;
+    
+    // Auto-detect Arduino port if none specified
+    if (!targetPort) {
+      console.log('🔍 No port specified, attempting auto-detection...');
+      writeSystemLog('ARDUINO_AUTO_DETECT', 'Attempting automatic Arduino port detection');
+      
+      const arduinoPorts = await detectArduinoPorts();
+      
+      if (arduinoPorts.length === 0) {
+        const allPorts = await listSerialPorts();
+        if (allPorts.length > 0) {
+          console.log('⚠️ No obvious Arduino ports found, trying first available port...');
+          targetPort = allPorts[0].path;
+        } else {
+          const errorMsg = 'No hay puertos serie disponibles. Verifica que el Arduino esté conectado.';
+          console.error('❌', errorMsg);
+          writeSystemLog('ARDUINO_AUTO_DETECT_FAIL', 'No serial ports available');
+          reject({ success: false, message: errorMsg });
+          return;
+        }
+      } else {
+        targetPort = arduinoPorts[0].path;
+        console.log(`🎯 Selected Arduino port: ${targetPort} (${arduinoPorts[0].manufacturer || 'Unknown'})`);
+      }
+    }
+
+    console.log(`🔌 Attempting to connect to: ${targetPort}`);
+    writeSystemLog('ARDUINO_CONNECT_ATTEMPT', 'Attempting Arduino connection', { port: targetPort, autoDetected: !serialPortPath });
+
     port = new SerialPort({
-      path: serialPortPath,
+      path: targetPort,
       baudRate: 115200,
     });
 
     serialParser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
 
     port.on('open', () => {
-      console.log(`Conectado a Arduino en ${serialPortPath}`);
-      writeSystemLog('ARDUINO_CONNECT', 'Arduino connected successfully', { port: serialPortPath });
-      resolve({ success: true, message: `Conectado a Arduino en ${serialPortPath}` });
+      console.log(`✅ Conectado a Arduino en ${targetPort}`);
+      writeSystemLog('ARDUINO_CONNECT', 'Arduino connected successfully', { port: targetPort, autoDetected: !serialPortPath });
+      resolve({ success: true, message: `Conectado a Arduino en ${targetPort}`, port: targetPort });
     });
 
     port.on('error', (err) => {
-      console.error('Error en el puerto serie:', err);
-      writeSystemLog('ARDUINO_ERROR', 'Arduino connection error', { error: err.message, port: serialPortPath });
-      reject({ success: false, message: `Error conectando a Arduino: ${err.message}` });
+      console.error(`❌ Error en el puerto serie ${targetPort}:`, err.message);
+      writeSystemLog('ARDUINO_ERROR', 'Arduino connection error', { error: err.message, port: targetPort });
+      
+      // If auto-detection failed, try other ports
+      if (!serialPortPath) {
+        console.log('🔄 Auto-detection failed, trying next available port...');
+        // You could implement retry logic here if needed
+      }
+      
+      reject({ success: false, message: `Error conectando a Arduino en ${targetPort}: ${err.message}` });
     });
 
     serialParser.on('data', (data) => {
@@ -313,13 +380,16 @@ app.get('/api/serial-ports', async (req, res) => {
 
 // API endpoint to connect to Arduino
 app.post('/api/connect', async (req, res) => {
-  const { portPath } = req.body;
+  const { portPath } = req.body || {};
+  
   try {
+    console.log(`🚀 Connect request received${portPath ? ` for port: ${portPath}` : ' (auto-detect mode)'}`);
     const result = await connectToArduino(portPath);
-    io.emit('arduinoConnected', { connected: true, port: portPath });
+    io.emit('arduinoConnected', { connected: true, port: result.port || portPath });
     res.json(result);
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('❌ Connection failed:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Error connecting to Arduino' });
   }
 });
 

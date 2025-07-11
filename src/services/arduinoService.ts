@@ -106,21 +106,42 @@ class ArduinoService {
     return response.json();
   }
 
-  // Conectar a Arduino
-  async connectToArduino(): Promise<{ success: boolean; message: string }> {
+  // Get available serial ports
+  async getSerialPorts(): Promise<any[]> {
+    const response = await fetch(`${this.baseURL}/api/serial-ports`);
+    if (!response.ok) {
+      throw new Error('Error obteniendo puertos serie');
+    }
+    const result = await response.json();
+    return result.ports || [];
+  }
+
+  // UPDATED: Enhanced connect method with optional port specification
+  async connectToArduino(portPath?: string): Promise<{ success: boolean; message: string; port?: string }> {
+    console.log(`🚀 Connecting to Arduino${portPath ? ` on port: ${portPath}` : ' (auto-detect)'}`);
+    
     const response = await fetch(`${this.baseURL}/api/connect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify(portPath ? { portPath } : {}),
     });
     
     if (!response.ok) {
-      throw new Error('Error conectando a Arduino');
+      const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+      throw new Error(errorData.message || 'Error conectando a Arduino');
     }
     
     const result = await response.json();
     this.isConnected = result.success;
+    
+    if (result.success) {
+      console.log(`✅ Successfully connected to Arduino on port: ${result.port}`);
+    } else {
+      console.error(`❌ Failed to connect to Arduino: ${result.message}`);
+    }
+    
     return result;
   }
 
