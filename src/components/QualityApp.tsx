@@ -62,6 +62,7 @@ const QualityApp = () => {
     const savedResults = localStorage.getItem('quality_results_' + getCurrentDateString());
     const savedOperator = localStorage.getItem('current_operator');
     const savedLogFormat = localStorage.getItem('log_format');
+    const savedOkCount = localStorage.getItem('ok_count_' + getCurrentDateString());
 
     if (savedSkus) setSkuDatabase(JSON.parse(savedSkus));
     if (savedCodigos) {
@@ -73,6 +74,7 @@ const QualityApp = () => {
     if (savedResults) setTestResults(JSON.parse(savedResults));
     if (savedOperator) setCurrentOperator(savedOperator);
     if (savedLogFormat) setLogFormat(savedLogFormat as 'csv' | 'json' | 'txt');
+    if (savedOkCount) setOkCount(parseInt(savedOkCount) || 0);
     
     setTimeout(() => {
       setIsDatabaseLoaded(true);
@@ -93,9 +95,24 @@ const QualityApp = () => {
     syncTimeoutRef.current = setTimeout(async () => {
       try {
         await Promise.all([
-          fileService.syncSkuDatabase(skuDatabase),
-          fileService.syncCodigosDatabase(codigosDatabase),
-          fileService.syncLotesDatabase(loteDatabase)
+          fileService.syncSkuDatabase(skuDatabase).catch(err => {
+            if (!err.message?.includes('404')) {
+              throw err;
+            }
+            console.log('📋 SKU database endpoint not available (404) - usando cache local');
+          }),
+          fileService.syncCodigosDatabase(codigosDatabase).catch(err => {
+            if (!err.message?.includes('404')) {
+              throw err;
+            }
+            console.log('📋 Códigos database endpoint not available (404) - usando cache local');
+          }),
+          fileService.syncLotesDatabase(loteDatabase).catch(err => {
+            if (!err.message?.includes('404')) {
+              throw err;
+            }
+            console.log('📋 Lotes database endpoint not available (404) - usando cache local');
+          })
         ]);
         console.log('📊 Databases auto-synced with server');
       } catch (error) {
@@ -129,6 +146,10 @@ const QualityApp = () => {
   useEffect(() => {
     localStorage.setItem('log_format', logFormat);
   }, [logFormat]);
+
+  useEffect(() => {
+    localStorage.setItem('ok_count_' + getCurrentDateString(), okCount.toString());
+  }, [okCount]);
 
   useEffect(() => {
     if (currentSku) {
@@ -292,19 +313,25 @@ const QualityApp = () => {
     setTotalProcessed(prev => prev + 1);
     
     if (resultIsOk) {
-      const newOkCount = okCount + 1;
-      setOkCount(newOkCount);
-      
-      console.log(`📈 Conteo actualizado: ${newOkCount} cables OK (SP: ${currentStandardPack}, Threshold: ${currentStandardPack * 2})`);
-      
-      if (newOkCount % (currentStandardPack * 2) === 0) {
-        console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
-        console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
-        await generateAutomaticLabels();
-      } else {
-        const remainingForNextPrint = (currentStandardPack * 2) - (newOkCount % (currentStandardPack * 2));
-        console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más`);
-      }
+      setOkCount(prevCount => {
+        const newOkCount = prevCount + 1;
+        console.log(`📈 Conteo actualizado: ${newOkCount} cables OK (SP: ${currentStandardPack}, Threshold: ${currentStandardPack * 2})`);
+        console.log(`📊 Estado anterior: ${prevCount}, nuevo estado: ${newOkCount}`);
+        
+        // Check for automatic printing in a separate effect to ensure state is updated
+        setTimeout(async () => {
+          if (newOkCount % (currentStandardPack * 2) === 0) {
+            console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
+            console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
+            await generateAutomaticLabels();
+          } else {
+            const remainingForNextPrint = (currentStandardPack * 2) - (newOkCount % (currentStandardPack * 2));
+            console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más`);
+          }
+        }, 0);
+        
+        return newOkCount;
+      });
     }
 
     setIsTestRunning(false);
