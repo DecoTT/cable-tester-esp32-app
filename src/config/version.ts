@@ -1,8 +1,8 @@
 // Configuración de versión de la aplicación
 export const APP_VERSION = {
-  version: '1.0.8',
+  version: '1.0.9',
   buildDate: '2025-07-15',
-  revision: 'rev-2407151',
+  revision: 'rev-2407152',
   environment: import.meta.env.MODE || 'development'
 };
 
