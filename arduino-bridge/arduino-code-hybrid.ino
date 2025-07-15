@@ -103,16 +103,17 @@ void checkSerialCommands() {
 }
 
 void handleStartTestCommand(String command) {
-  // Formato: START_TEST:SKU:OPERATOR
+  // Formato: START_TEST:SKU:OPERATOR:TESTID
   Serial.println("INFO:Comando START_TEST recibido");
   
   // Parsear SKU y Operador del comando
   int firstColon = command.indexOf(':');
   int secondColon = command.indexOf(':', firstColon + 1);
+  int thirdColon = command.indexOf(':', secondColon + 1);
   
   if (firstColon > 0 && secondColon > firstColon) {
     String sku = command.substring(firstColon + 1, secondColon);
-    String operatorName = command.substring(secondColon + 1);
+    String operatorName = command.substring(secondColon + 1, thirdColon > 0 ? thirdColon : command.length());
     
     // Actualizar variables solo si son diferentes
     if (sku != currentSKU) {
@@ -125,16 +126,66 @@ void handleStartTestCommand(String command) {
     }
   }
   
-  // Ejecutar UNA sola prueba simulada (MODO APP)
+  // Determinar número de cables basado en SKU (simulación realista)
+  int cableCount = 6; // Por defecto 6 cables
+  if (currentSKU.toInt() % 3 == 0) {
+    cableCount = 2;  // Cables de 2 conductores
+  } else if (currentSKU.toInt() % 2 == 0) {
+    cableCount = 4;  // Cables de 4 conductores
+  }
+  
+  // Informar inicio de prueba
+  Serial.println("INFO:Iniciando prueba de " + String(cableCount) + " cables");
   Serial.println("STATUS:Ejecutando prueba individual");
   digitalWrite(LED_PIN, HIGH);
   
-  // Simular tiempo de prueba
-  delay(1000);
+  // Pequeña pausa antes de comenzar
+  delay(500);
   
-  // Enviar resultado simulado (80% OK, 20% Error)
-  String result = (random(100) < 80) ? "RESULT:OK" : "RESULT:Error 1";
-  Serial.println(result);
+  // Informar que se está verificando continuidad
+  Serial.println("INFO:Verificando continuidad");
+  
+  // Simular prueba de cada canal individual
+  bool hasFailure = false;
+  String finalResult = "OK";
+  
+  for (int i = 0; i < cableCount; i++) {
+    // Simular tiempo de prueba por canal
+    delay(200 + random(400)); // 200-600ms por canal
+    
+    // 85% probabilidad de OK, 15% de FAIL
+    bool channelOK = (random(100) < 85);
+    String channelResult = channelOK ? "OK" : "FAIL";
+    
+    Serial.println("CHANNEL:" + String(i) + ":" + channelResult);
+    
+    if (!channelOK) {
+      hasFailure = true;
+    }
+  }
+  
+  // Determinar resultado final basado en los canales
+  if (hasFailure) {
+    // Diferentes tipos de errores basados en el patrón de fallas
+    int errorType = random(3);
+    switch (errorType) {
+      case 0:
+        finalResult = "Falla continuidad";
+        break;
+      case 1:
+        finalResult = "Error 1";
+        break;
+      case 2:
+        finalResult = "Error 2";
+        break;
+    }
+  }
+  
+  // Pequeña pausa antes del resultado final
+  delay(300);
+  
+  // Enviar resultado final
+  Serial.println("RESULT:" + finalResult);
   
   digitalWrite(LED_PIN, LOW);
   Serial.println("STATUS:Prueba individual completada");
