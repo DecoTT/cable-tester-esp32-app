@@ -192,7 +192,15 @@ const addArduinoLog = (type, content, raw = null) => {
 // Enhanced Arduino message parser
 const parseArduinoMessage = (data) => {
   const message = data.toString().trim();
-  console.log('📨 Arduino:', message);
+  const timestamp = new Date().toISOString();
+  console.log(`📨 [${timestamp}] Arduino RAW: "${message}"`);
+  
+  // Add detailed logging for debugging parsing issues
+  console.log(`📨 [${timestamp}] Message length: ${message.length}, First 50 chars: "${message.substring(0, 50)}"`);
+  
+  // Log hex representation for debugging invisible characters
+  const hexBytes = Buffer.from(message, 'utf8').toString('hex').match(/.{2}/g)?.join(' ') || '';
+  console.log(`📨 [${timestamp}] Hex: ${hexBytes}`);
   
   // Parse different message types
   if (message.startsWith('INFO:')) {
@@ -248,6 +256,11 @@ const parseArduinoMessage = (data) => {
     
   } else if (message.startsWith('RESULT:')) {
     const content = message.substring(7).trim();
+    console.log(`🎯 RESULTADO FINAL DETECTADO: "${content}"`);
+    console.log(`🔍 Tipo de resultado: ${typeof content}, Longitud: ${content.length}`);
+    console.log(`🔍 Es exactamente 'OK'?: ${content === 'OK'}`);
+    console.log(`🔍 Contenido hex: ${Buffer.from(content, 'utf8').toString('hex')}`);
+    
     addArduinoLog('RESULT', content, message);
     
     // Find active test and complete it
@@ -576,12 +589,16 @@ app.post('/api/start-test', (req, res) => {
   currentArduinoState.sku = sku;
   currentArduinoState.operator = operator;
 
-  // Construct the command string
-  const command = `START_TEST:${sku}:${operator}:${testId}`;
+  // Construct the command string compatible with Arduino v4 format
+  // Arduino v4 expects: START_TEST:SKU,OPERATOR
+  const command = `START_TEST:${sku},${operator}`;
+  
+  console.log(`🔧 Comando compatible con Arduino v4: ${command}`);
 
-  console.log(`🚀 Comando START_TEST enviado - SKU: ${sku}, Operador: ${operator}`);
+      console.log(`🚀 Comando START_TEST enviado - SKU: ${sku}, Operador: ${operator}`);
   console.log(`📊 Test iniciado - ID: ${testId}, SKU: ${sku}, Operador: ${operator}`);
-  writeSystemLog('TEST_START', 'Test started', { sku, operator, testId });
+  console.log(`📤 Comando enviado: "${command}"`);
+  writeSystemLog('TEST_START', 'Test started', { sku, operator, testId, command });
 
   sendDataToArduino(command)
     .then(result => {

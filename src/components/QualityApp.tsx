@@ -249,6 +249,22 @@ const QualityApp = () => {
       testId: arduinoResult.testId
     });
     
+    // Debug result classification
+    console.log(`🔍 Clasificación de resultado: "${arduinoResult.result}"`);
+    console.log(`🔍 Tipo: ${typeof arduinoResult.result}, Longitud: ${arduinoResult.result?.length}`);
+    console.log(`🔍 Es exactamente 'OK'?: ${arduinoResult.result === 'OK'}`);
+    console.log(`🔍 Trimmed result: "${arduinoResult.result?.trim()}"`);
+    console.log(`🔍 Es 'OK' después de trim?: ${arduinoResult.result?.trim() === 'OK'}`);
+    
+    // Clasificación mejorada de resultados
+    const isOkResult = (result: string) => {
+      const cleanResult = result?.trim().toUpperCase();
+      return cleanResult === 'OK' || cleanResult === 'PASS' || cleanResult === 'GOOD';
+    };
+    
+    const resultIsOk = isOkResult(arduinoResult.result);
+    console.log(`🎯 Resultado final clasificado como OK: ${resultIsOk}`);
+    
     const now = new Date();
     
     const resultSku = arduinoResult.sku || currentSku || 'UNKNOWN';
@@ -275,7 +291,7 @@ const QualityApp = () => {
     setTestResults(prev => [newResult, ...prev]);
     setTotalProcessed(prev => prev + 1);
     
-    if (arduinoResult.result === 'OK') {
+    if (resultIsOk) {
       const newOkCount = okCount + 1;
       setOkCount(newOkCount);
       
