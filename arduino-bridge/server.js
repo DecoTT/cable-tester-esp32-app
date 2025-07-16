@@ -48,6 +48,36 @@ const TEMP_DIR = path.join(__dirname, 'temp');
   }
 });
 
+// Nueva función para crear tests automáticamente cuando Arduino presiona botón
+const createAutomaticTest = (sku = 'UNKNOWN', operator = 'Arduino') => {
+  const testId = `test_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const testData = {
+    sku,
+    operator,
+    startTime: Date.now(),
+    testId
+  };
+  
+  activeTests.set(testId, testData);
+  
+  console.log(`📊 Test iniciado - ID: ${testId}, SKU: ${sku}, Operador: ${operator}`);
+  writeSystemLog('TEST_START', 'Automatic test started', { sku, operator, testId });
+  
+  // Update Arduino state
+  currentArduinoState.sku = sku;
+  currentArduinoState.operator = operator;
+  currentArduinoState.channelResults = [];
+  
+  // Emit test started event
+  io.emit('test_started', {
+    testId,
+    cableCount: 0,
+    timestamp: new Date().toISOString()
+  });
+  
+  return testId;
+};
+
 // Database file management
 const loadDatabase = (filename) => {
   const filepath = path.join(DATABASE_DIR, filename);
@@ -206,12 +236,29 @@ const parseArduinoMessage = (data) => {
   if (message.startsWith('INFO:')) {
     const content = message.substring(5).trim();
     addArduinoLog('INFO', content, message);
+    
+    // ✅ AGREGAR: Auto-crear test cuando Arduino inicia prueba (botón físico)
+    const cableCountMatch = content.match(/Iniciando prueba de (\d+) cables/);
+    if (cableCountMatch) {
+      currentArduinoState.cableCount = parseInt(cableCountMatch[1]);
+      // Crear test automático si no existe ninguno
+      if (activeTests.size === 0) {
+        createAutomaticTest(currentArduinoState.sku || 'UNKNOWN', currentArduinoState.operator || 'Arduino');
+      }
+    }
+    
     io.emit('arduino_info', { type: 'INFO', content, timestamp: new Date().toISOString() });
     
   } else if (message.startsWith('STATUS:')) {
     const content = message.substring(7).trim();
     currentArduinoState.status = content;
     addArduinoLog('STATUS', content, message);
+    
+    // ✅ AGREGAR: Limpiar resultados de canales al iniciar nueva prueba
+    if (content === 'Ejecutando prueba individual') {
+      currentArduinoState.channelResults = [];
+    }
+    
     io.emit('arduino_status', currentArduinoState);
     
   } else if (message.startsWith('SKU:')) {
@@ -256,16 +303,18 @@ const parseArduinoMessage = (data) => {
     
   } else if (message.startsWith('RESULT:')) {
     const content = message.substring(7).trim();
-    console.log(`🎯 RESULTADO FINAL DETECTADO: "${content}"`);
-    console.log(`🔍 Tipo de resultado: ${typeof content}, Longitud: ${content.length}`);
-    console.log(`🔍 Es exactamente 'OK'?: ${content === 'OK'}`);
-    console.log(`🔍 Contenido hex: ${Buffer.from(content, 'utf8').toString('hex')}`);
-    
     addArduinoLog('RESULT', content, message);
     
-    // Find active test and complete it
-    for (let [testId, testData] of activeTests) {
-      if (testData.sku === currentArduinoState.sku && testData.operator === currentArduinoState.operator) {
+    // ✅ ARREGLAR: Usar método FIFO como en v4
+    let testCompleted = false;
+    
+    if (activeTests.size > 0) {
+      // Obtener el test más antiguo (FIFO)
+      const oldestTestEntry = Array.from(activeTests.entries())
+        .sort(([,a], [,b]) => a.startTime - b.startTime)[0];
+      
+      if (oldestTestEntry) {
+        const [testId, testData] = oldestTestEntry;
         const duration = (Date.now() - testData.startTime) / 1000;
         
         const testResult = {
@@ -291,8 +340,27 @@ const parseArduinoMessage = (data) => {
         
         // Clean up
         activeTests.delete(testId);
-        break;
+        testCompleted = true;
       }
+    }
+    
+    // Si no hay test activo, crear resultado básico
+    if (!testCompleted) {
+      const testResult = {
+        result: content,
+        timestamp: new Date().toISOString(),
+        duration: 0.64, // Duración por defecto
+        sku: currentArduinoState.sku || 'UNKNOWN',
+        operator: currentArduinoState.operator || 'Arduino',
+        testId: `test_${Date.now()}_orphan`,
+        cableCount: currentArduinoState.channelResults.length,
+        channelResults: [...currentArduinoState.channelResults]
+      };
+      
+      console.log('⚠️  Resultado sin test activo, creando resultado básico:', testResult);
+      writeTestLog(testResult);
+      io.emit('test_result', testResult);
+      io.emit('arduinoTestResult', testResult);
     }
     
     io.emit('arduino_message', { type: 'RESULT', content, timestamp: new Date().toISOString(), raw: message });
@@ -392,10 +460,10 @@ const connectToArduino = async (serialPortPath = null) => {
 
     port = new SerialPort({
       path: targetPort,
-      baudRate: 115200,
+      baudRate: 9600,  // ✅ CORRECTO
     });
 
-    serialParser = port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
+    serialParser = port.pipe(new ReadlineParser({ delimiter: '\n' })); // ✅ CORRECTO
 
     port.on('open', () => {
       console.log(`✅ Conectado a Arduino en ${targetPort}`);
