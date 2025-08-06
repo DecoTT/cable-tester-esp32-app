@@ -778,34 +778,32 @@ app.post('/api/print-labels', async (req, res) => {
       // Generate QR code with dot separators
       const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
       const qrCodeDataURL = await QRCode.toDataURL(qrData, {
-        width: 24,
-        margin: 0,
+        width: 40,
+        margin: 1,
         color: { dark: '#000000', light: '#FFFFFF' }
       });
       
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
-      // Draw border for each label
-      doc.rect(xPos, yPos, labelWidth - 2, labelHeight - 2).stroke();
+      // Border removed for cleaner look
 
       // Add content to PDF - positioned for each label
       // SKU - Larger and at top
       doc.fontSize(12).font('Helvetica-Bold')
          .text(label.sku, xPos + 4, yPos + 4, { align: 'center', width: labelWidth - 8 });
       
-      // Information section with better spacing
-      doc.fontSize(8).font('Helvetica')
-         .text(`Fecha: ${label.date}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
-         .text(`Lote: ${label.lote}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 })
-         .text(`QTY: ${label.qty}`, xPos + 4, yPos + 32, { align: 'center', width: labelWidth - 8 });
+      // Compact information section
+      doc.fontSize(7).font('Helvetica')
+         .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
+         .text(`QTY: ${label.qty}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 });
       
-      // Add QR code - centered
-      const qrX = xPos + (labelWidth / 2) - 12; // Center the 24px QR code
-      doc.image(qrBuffer, qrX, yPos + 40, { width: 24, height: 24 });
+      // Add larger QR code - centered
+      const qrX = xPos + (labelWidth / 2) - 20; // Center the 40px QR code
+      doc.image(qrBuffer, qrX, yPos + 32, { width: 40, height: 40 });
       
-      // QR data text at bottom with dots
-      doc.fontSize(6).text(qrData, xPos + 4, yPos + 66, { align: 'center', width: labelWidth - 8 });
+      // QR data text at bottom with smaller font
+      doc.fontSize(5).text(qrData, xPos + 4, yPos + 74, { align: 'center', width: labelWidth - 8 });
     }
 
     doc.end();
