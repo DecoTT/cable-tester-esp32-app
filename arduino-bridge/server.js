@@ -416,6 +416,82 @@ const listSerialPorts = async () => {
   }
 };
 
+// Enhanced printing functions
+const printPDFFile = (filepath, printerName) => {
+  return new Promise((resolve, reject) => {
+    // Verificar que el archivo existe
+    if (!fs.existsSync(filepath)) {
+      return reject(new Error(`Archivo no encontrado: ${filepath}`));
+    }
+
+    // Verificar que el archivo no está vacío
+    const stats = fs.statSync(filepath);
+    if (stats.size === 0) {
+      return reject(new Error(`Archivo vacío: ${filepath}`));
+    }
+
+    const escapedPath = `"${filepath}"`;
+    let printCommand;
+
+    if (process.platform === 'win32') {
+      // Comando mejorado para Windows usando PowerShell
+      printCommand = `powershell -Command "Start-Process -FilePath ${escapedPath} -Verb Print -Wait"`;
+    } else {
+      // Linux/Mac
+      printCommand = `lp -d "${printerName}" "${filepath}"`;
+    }
+
+    // Ejecutar con timeout de 30 segundos
+    const child = exec(printCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+      if (error) {
+        if (error.killed) {
+          reject(new Error('Timeout: El comando de impresión tardó demasiado'));
+        } else {
+          reject(new Error(`Error de impresión: ${error.message}`));
+        }
+      } else {
+        resolve({
+          success: true,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          fileSize: stats.size,
+          printer: printerName
+        });
+      }
+    });
+  });
+};
+
+const verifyPrinterAvailable = (printerName) => {
+  return new Promise((resolve, reject) => {
+    if (process.platform === 'win32') {
+      // Verificar impresora en Windows
+      const command = `wmic printer where "name='${printerName}'" get name,workoffline /format:csv`;
+      exec(command, { timeout: 10000 }, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`Error verificando impresora: ${error.message}`));
+        } else {
+          const lines = stdout.split('\n').filter(line => line.trim() && !line.startsWith('Node'));
+          if (lines.length > 0) {
+            resolve(true);
+          } else {
+            reject(new Error('Impresora no encontrada'));
+          }
+        }
+      });
+    } else {
+      // Linux/Mac
+      exec(`lpstat -d | grep ${printerName}`, { timeout: 10000 }, (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(`Error verificando impresora: ${error.message}`));
+        } else {
+          resolve(true);
+        }
+      });
+    }
+  });
+};
+
 // Function to connect to Arduino
 const connectToArduino = async (serialPortPath = null) => {
   return new Promise(async (resolve, reject) => {
@@ -725,7 +801,7 @@ const cleanupAllTempFiles = () => {
   tempFilesToCleanup.clear();
 };
 
-// Enhanced label printing with better file handling and automatic logging
+// Enhanced label printing with improved printer handling
 app.post('/api/print-labels', async (req, res) => {
   try {
     const { labels } = req.body;
@@ -735,6 +811,16 @@ app.post('/api/print-labels', async (req, res) => {
     }
 
     console.log(`🖨️  Generando PDF para ${labels.length} etiqueta(s)...`);
+
+    // Verificar impresora disponible antes de generar PDF
+    if (defaultPrinter) {
+      try {
+        await verifyPrinterAvailable(defaultPrinter);
+        console.log(`✅ Impresora verificada: ${defaultPrinter}`);
+      } catch (error) {
+        console.warn(`⚠️  Advertencia: ${error.message}. Continuando con generación...`);
+      }
+    }
 
     // Log each label individually
     labels.forEach(label => {
@@ -752,7 +838,7 @@ app.post('/api/print-labels', async (req, res) => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // ✅ FASE 5: Layout de 2 etiquetas por línea horizontal
+    // ✅ MANTENER: Layout de 2 etiquetas por línea horizontal
     const labelsPerRow = 2;
     const labelWidth = 93.6;  // 1.3" in points
     const labelHeight = 72;   // 1" in points
@@ -786,8 +872,6 @@ app.post('/api/print-labels', async (req, res) => {
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
-      // Border removed for cleaner look
-
       // Add content to PDF - positioned for each label
       // SKU - Larger and at top
       doc.fontSize(12).font('Helvetica-Bold')
@@ -808,50 +892,163 @@ app.post('/api/print-labels', async (req, res) => {
 
     doc.end();
 
-    // Wait for PDF generation to complete
+    // ✅ MEJORA CRÍTICA: Esperar sincronización completa del archivo
     await new Promise((resolve, reject) => {
-      stream.on('finish', resolve);
+      stream.on('finish', () => {
+        // Esperar un poco más para asegurar que el archivo esté completamente escrito
+        setTimeout(resolve, 500);
+      });
       stream.on('error', reject);
     });
 
     console.log(`📄 PDF generado: ${filename}`);
-    writeSystemLog('LABEL_GENERATE', 'PDF labels generated', { filename, count: labels.length });
+    
+    // Verificar que el archivo está completo
+    const fileStats = fs.statSync(filepath);
+    console.log(`📊 Tamaño del archivo: ${fileStats.size} bytes`);
+    
+    writeSystemLog('LABEL_GENERATE', 'PDF labels generated', { 
+      filename, 
+      count: labels.length, 
+      fileSize: fileStats.size 
+    });
 
+    let printResult = null;
+    
     if (defaultPrinter) {
-      // Send to printer
-      const printCommand = process.platform === 'win32' 
-        ? `print /D:"${defaultPrinter}" "${filepath}"`
-        : `lp -d "${defaultPrinter}" "${filepath}"`;
-
-      exec(printCommand, (error, stdout, stderr) => {
-        if (error) {
-          console.error('❌ Error enviando a impresora:', error);
-          writeSystemLog('LABEL_PRINT_ERROR', 'Error printing labels', { error: error.message, filename });
-        } else {
-          console.log('✅ Archivo enviado a impresora');
-          writeSystemLog('LABEL_PRINT_SUCCESS', 'Labels sent to printer successfully', { filename, printer: defaultPrinter });
-        }
+      try {
+        console.log(`🖨️  Enviando a impresora: ${defaultPrinter}...`);
+        printResult = await printPDFFile(filepath, defaultPrinter);
         
-        // ✅ FASE 2: No eliminar inmediatamente, programar para limpieza al cerrar
-        scheduleFileForCleanup(filepath);
-      });
+        console.log('✅ Archivo enviado a impresora exitosamente');
+        writeSystemLog('LABEL_PRINT_SUCCESS', 'Labels sent to printer successfully', {
+          filename,
+          printer: defaultPrinter,
+          fileSize: printResult.fileSize
+        });
+        
+      } catch (error) {
+        console.error('❌ Error enviando a impresora:', error.message);
+        writeSystemLog('LABEL_PRINT_ERROR', 'Error printing labels', { 
+          error: error.message, 
+          filename,
+          printer: defaultPrinter
+        });
+        printResult = { error: error.message };
+      }
     } else {
       console.log('⚠️  No hay impresora configurada, PDF guardado solamente');
-      scheduleFileForCleanup(filepath);
     }
+
+    scheduleFileForCleanup(filepath);
 
     res.json({ 
       success: true, 
       message: labels.length === 1 
-        ? 'Etiqueta enviada a impresión' 
-        : `${labels.length} etiquetas enviadas a impresión`,
-      filename: filename 
+        ? 'Etiqueta generada y enviada a impresión' 
+        : `${labels.length} etiquetas generadas y enviadas a impresión`,
+      filename: filename,
+      printer: defaultPrinter,
+      fileSize: fileStats.size,
+      printStatus: printResult ? (printResult.error ? 'error' : 'success') : 'no_printer'
     });
 
   } catch (error) {
     console.error('❌ Error generando etiquetas:', error);
     writeSystemLog('LABEL_ERROR', 'Error generating labels', { error: error.message });
     res.json({ success: false, message: 'Error generando etiquetas: ' + error.message });
+  }
+});
+
+// Test printer endpoint
+app.post('/api/test-printer', async (req, res) => {
+  try {
+    const { printerName } = req.body;
+    const testPrinter = printerName || defaultPrinter;
+    
+    if (!testPrinter) {
+      return res.json({ success: false, message: 'No se especificó impresora para prueba' });
+    }
+
+    console.log(`🧪 Probando impresora: ${testPrinter}`);
+
+    // Verificar disponibilidad
+    try {
+      await verifyPrinterAvailable(testPrinter);
+    } catch (error) {
+      return res.json({ 
+        success: false, 
+        message: `Impresora no disponible: ${error.message}` 
+      });
+    }
+
+    // Crear documento de prueba simple
+    const timestamp = Date.now();
+    const tempDir = path.join(__dirname, 'temp');
+    const filename = `test_${timestamp}.pdf`;
+    const filepath = path.join(tempDir, filename);
+
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const stream = fs.createWriteStream(filepath);
+    doc.pipe(stream);
+
+    doc.fontSize(16).font('Helvetica-Bold')
+       .text('PRUEBA DE IMPRESIÓN', { align: 'center' })
+       .moveDown()
+       .fontSize(12).font('Helvetica')
+       .text(`Impresora: ${testPrinter}`)
+       .text(`Fecha: ${new Date().toLocaleString()}`)
+       .text(`Archivo: ${filename}`)
+       .moveDown()
+       .text('Si puede leer esto, la impresión funciona correctamente.');
+
+    doc.end();
+
+    await new Promise((resolve, reject) => {
+      stream.on('finish', () => setTimeout(resolve, 500));
+      stream.on('error', reject);
+    });
+
+    // Intentar imprimir
+    try {
+      const printResult = await printPDFFile(filepath, testPrinter);
+      scheduleFileForCleanup(filepath);
+      
+      writeSystemLog('PRINTER_TEST_SUCCESS', 'Printer test successful', {
+        printer: testPrinter,
+        filename,
+        fileSize: printResult.fileSize
+      });
+
+      res.json({
+        success: true,
+        message: `Prueba de impresión enviada exitosamente a ${testPrinter}`,
+        printer: testPrinter,
+        filename,
+        fileSize: printResult.fileSize
+      });
+
+    } catch (error) {
+      scheduleFileForCleanup(filepath);
+      writeSystemLog('PRINTER_TEST_ERROR', 'Printer test failed', {
+        printer: testPrinter,
+        error: error.message
+      });
+
+      res.json({
+        success: false,
+        message: `Error en prueba de impresión: ${error.message}`,
+        printer: testPrinter
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error en prueba de impresora:', error);
+    res.json({ success: false, message: 'Error interno: ' + error.message });
   }
 });
 
@@ -1207,6 +1404,7 @@ const displayServerInfo = () => {
   console.log('   GET  http://localhost:3001/api/arduino-logs');
   console.log('   GET  http://localhost:3001/api/arduino-state');
   console.log('   POST http://localhost:3001/api/print-labels');
+  console.log('   POST http://localhost:3001/api/test-printer');
   console.log('   GET  http://localhost:3001/api/printers');
   console.log('   POST http://localhost:3001/api/set-default-printer');
   console.log('   POST http://localhost:3001/api/generate-qr');
