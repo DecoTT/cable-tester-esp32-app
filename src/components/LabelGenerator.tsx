@@ -33,6 +33,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   const [selectedPrinter, setSelectedPrinter] = useState<string>('');
   const [qrPreviewAuto, setQrPreviewAuto] = useState<string>('');
   const [qrPreviewManual, setQrPreviewManual] = useState<string>('');
+  const [labelType, setLabelType] = useState<'standard' | 'large'>('standard');
 
   useEffect(() => {
     setCustomSku(currentSku);
@@ -137,7 +138,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
     ];
 
     try {
-      await printLabels(labelsToGenerate);
+      await printLabels(labelsToGenerate, labelType);
       
       toast({
         title: "Etiqueta generada automáticamente",
@@ -172,7 +173,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
     ];
 
     try {
-      await printLabels(labelsToGenerate);
+      await printLabels(labelsToGenerate, labelType);
       
       toast({
         title: "Etiqueta generada manualmente",
@@ -214,7 +215,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
     ];
 
     try {
-      await printLabels(labelsToGenerate);
+      await printLabels(labelsToGenerate, labelType);
       
       toast({
         title: "Par de etiquetas impresas",
@@ -286,25 +287,42 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center space-x-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium mb-2">Impresora Seleccionada</label>
-              <Select value={selectedPrinter} onValueChange={handlePrinterChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione una impresora" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availablePrinters.map((printer) => (
-                    <SelectItem key={printer.name} value={printer.name}>
-                      {printer.displayName} {printer.isDefault ? "(Predeterminada)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-4">
+            <div className="flex items-center space-x-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium mb-2">Impresora Seleccionada</label>
+                <Select value={selectedPrinter} onValueChange={handlePrinterChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione una impresora" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePrinters.map((printer) => (
+                      <SelectItem key={printer.name} value={printer.name}>
+                        {printer.displayName} {printer.isDefault ? "(Predeterminada)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={loadPrinters} variant="outline">
+                Actualizar Lista
+              </Button>
             </div>
-            <Button onClick={loadPrinters} variant="outline">
-              Actualizar Lista
-            </Button>
+            
+            <div className="flex items-center space-x-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium mb-2">Tamaño de Etiqueta</label>
+                <Select value={labelType} onValueChange={(value: 'standard' | 'large') => setLabelType(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccione tamaño de etiqueta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard - 1.3" x 1" (2 por línea)</SelectItem>
+                    <SelectItem value="large">Large - 7.5cm x 5cm (1 por página)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -481,7 +499,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       {/* Label Preview */}
       <Card>
         <CardHeader>
-          <CardTitle>Vista Previa de Etiqueta con QR Real (1.3" x 1")</CardTitle>
+          <CardTitle>Vista Previa de Etiqueta con QR Real ({labelType === 'standard' ? '1.3" x 1"' : '7.5cm x 5cm'})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex justify-center space-x-4">

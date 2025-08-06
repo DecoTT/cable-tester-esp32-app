@@ -92,16 +92,16 @@ export const generateLabelHTML = (sku: string, date: string, qty: string, lote: 
   `;
 };
 
-export const printLabels = async (labels: Array<{sku: string, date: string, qty: string, lote: string}>) => {
+export const printLabels = async (labels: Array<{sku: string, date: string, qty: string, lote: string}>, labelType: 'standard' | 'large' = 'standard') => {
   try {
-    console.log(`🖨️  Enviando ${labels.length} etiqueta(s) a impresión...`);
+    console.log(`🖨️  Enviando ${labels.length} etiqueta(s) a impresión (${labelType})...`);
     
     const response = await makeRequest('/api/print-labels', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ labels }),
+      body: JSON.stringify({ labels, labelType }),
     });
 
     const result = await response.json();

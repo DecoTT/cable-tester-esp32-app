@@ -804,7 +804,7 @@ const cleanupAllTempFiles = () => {
 // Enhanced label printing with improved printer handling
 app.post('/api/print-labels', async (req, res) => {
   try {
-    const { labels } = req.body;
+    const { labels, labelType = 'standard' } = req.body;
     
     if (!labels || !Array.isArray(labels) || labels.length === 0) {
       return res.json({ success: false, message: 'No se proporcionaron etiquetas para imprimir' });
@@ -838,12 +838,30 @@ app.post('/api/print-labels', async (req, res) => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // ✅ MANTENER: Layout de 2 etiquetas por línea horizontal
-    const labelsPerRow = 2;
-    const labelWidth = 93.6;  // 1.3" in points
-    const labelHeight = 72;   // 1" in points
-    const pageWidth = (labelWidth * labelsPerRow) + 16; // Add margins
-    const pageHeight = Math.ceil(labels.length / labelsPerRow) * labelHeight + 16;
+    // Configuración dinámica según tipo de etiqueta
+    let labelsPerRow, labelWidth, labelHeight, pageWidth, pageHeight, qrSize, fontSize, titleSize;
+    
+    if (labelType === 'large') {
+      // 7.5cm x 5cm = 212.6 x 141.7 points (1 por página)
+      labelsPerRow = 1;
+      labelWidth = 212.6;
+      labelHeight = 141.7;
+      pageWidth = labelWidth + 16;
+      pageHeight = (labelHeight * labels.length) + 16;
+      qrSize = 80;
+      fontSize = 14;
+      titleSize = 18;
+    } else {
+      // Standard 1.3" x 1" = 93.6 x 72 points (2 por línea)
+      labelsPerRow = 2;
+      labelWidth = 93.6;
+      labelHeight = 72;
+      pageWidth = (labelWidth * labelsPerRow) + 16;
+      pageHeight = Math.ceil(labels.length / labelsPerRow) * labelHeight + 16;
+      qrSize = 40;
+      fontSize = 7;
+      titleSize = 12;
+    }
 
     const doc = new PDFDocument({ 
       size: [pageWidth, pageHeight],
@@ -864,7 +882,7 @@ app.post('/api/print-labels', async (req, res) => {
       // Generate QR code with dot separators
       const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
       const qrCodeDataURL = await QRCode.toDataURL(qrData, {
-        width: 40,
+        width: qrSize,
         margin: 1,
         color: { dark: '#000000', light: '#FFFFFF' }
       });
@@ -872,22 +890,34 @@ app.post('/api/print-labels', async (req, res) => {
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
-      // Add content to PDF - positioned for each label
-      // SKU - Larger and at top
-      doc.fontSize(12).font('Helvetica-Bold')
-         .text(label.sku, xPos + 4, yPos + 4, { align: 'center', width: labelWidth - 8 });
-      
-      // Compact information section
-      doc.fontSize(7).font('Helvetica')
-         .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
-         .text(`QTY: ${label.qty}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 });
-      
-      // Add larger QR code - centered
-      const qrX = xPos + (labelWidth / 2) - 20; // Center the 40px QR code
-      doc.image(qrBuffer, qrX, yPos + 32, { width: 40, height: 40 });
-      
-      // QR data text at bottom with smaller font
-      doc.fontSize(5).text(qrData, xPos + 4, yPos + 74, { align: 'center', width: labelWidth - 8 });
+      if (labelType === 'large') {
+        // Layout para etiqueta grande (7.5cm x 5cm)
+        doc.fontSize(titleSize).font('Helvetica-Bold')
+           .text(label.sku, xPos + 4, yPos + 8, { align: 'center', width: labelWidth - 8 });
+        
+        doc.fontSize(fontSize).font('Helvetica')
+           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 32, { align: 'center', width: labelWidth - 8 })
+           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 48, { align: 'center', width: labelWidth - 8 })
+           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 64, { align: 'center', width: labelWidth - 8 });
+        
+        const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
+        doc.image(qrBuffer, qrX, yPos + 80, { width: qrSize, height: qrSize });
+        
+        doc.fontSize(8).text(qrData, xPos + 4, yPos + 170, { align: 'center', width: labelWidth - 8 });
+      } else {
+        // Layout para etiqueta standard (1.3" x 1")
+        doc.fontSize(titleSize).font('Helvetica-Bold')
+           .text(label.sku, xPos + 4, yPos + 4, { align: 'center', width: labelWidth - 8 });
+        
+        doc.fontSize(fontSize).font('Helvetica')
+           .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
+           .text(`QTY: ${label.qty}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 });
+        
+        const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
+        doc.image(qrBuffer, qrX, yPos + 32, { width: qrSize, height: qrSize });
+        
+        doc.fontSize(5).text(qrData, xPos + 4, yPos + 74, { align: 'center', width: labelWidth - 8 });
+      }
     }
 
     doc.end();
