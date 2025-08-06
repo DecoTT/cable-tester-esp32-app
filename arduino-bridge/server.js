@@ -849,7 +849,7 @@ app.post('/api/print-labels', async (req, res) => {
       pageWidth = labelWidth + 16;
       pageHeight = (labelHeight * labels.length) + 16;
       qrSize = 80;
-      fontSize = 14;
+      fontSize = 7;
       titleSize = 18;
     } else {
       // Standard 1.3" x 1" = 93.6 x 72 points (2 por línea)
@@ -865,7 +865,7 @@ app.post('/api/print-labels', async (req, res) => {
 
     const doc = new PDFDocument({ 
       size: [pageWidth, pageHeight],
-      margin: 8
+      margin: 2
     });
     
     const stream = fs.createWriteStream(filepath);
@@ -876,8 +876,8 @@ app.post('/api/print-labels', async (req, res) => {
       const row = Math.floor(i / labelsPerRow);
       const col = i % labelsPerRow;
       
-      const xPos = 8 + (col * labelWidth);
-      const yPos = 8 + (row * labelHeight);
+      const xPos = 2 + (col * labelWidth);
+      const yPos = 2 + (row * labelHeight);
 
       // Generate QR code with dot separators
       const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
@@ -893,30 +893,30 @@ app.post('/api/print-labels', async (req, res) => {
       if (labelType === 'large') {
         // Layout para etiqueta grande (7.5cm x 5cm)
         doc.fontSize(titleSize).font('Helvetica-Bold')
-           .text(label.sku, xPos + 4, yPos + 8, { align: 'center', width: labelWidth - 8 });
+           .text(label.sku, xPos + 4, yPos + 2, { align: 'center', width: labelWidth - 8 });
         
         doc.fontSize(fontSize).font('Helvetica')
-           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 32, { align: 'center', width: labelWidth - 8 })
-           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 48, { align: 'center', width: labelWidth - 8 })
-           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 64, { align: 'center', width: labelWidth - 8 });
+           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 18, { align: 'center', width: labelWidth - 8 })
+           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 28, { align: 'center', width: labelWidth - 8 })
+           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 38, { align: 'center', width: labelWidth - 8 });
         
         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 80, { width: qrSize, height: qrSize });
+        doc.image(qrBuffer, qrX, yPos + 50, { width: qrSize, height: qrSize });
         
-        doc.fontSize(8).text(qrData, xPos + 4, yPos + 170, { align: 'center', width: labelWidth - 8 });
+        doc.fontSize(8).text(qrData, xPos + 4, yPos + 140, { align: 'center', width: labelWidth - 8 });
       } else {
         // Layout para etiqueta standard (1.3" x 1")
         doc.fontSize(titleSize).font('Helvetica-Bold')
-           .text(label.sku, xPos + 4, yPos + 4, { align: 'center', width: labelWidth - 8 });
+           .text(label.sku, xPos + 4, yPos + 2, { align: 'center', width: labelWidth - 8 });
         
         doc.fontSize(fontSize).font('Helvetica')
-           .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
-           .text(`QTY: ${label.qty}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 });
+           .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 14, { align: 'center', width: labelWidth - 8 })
+           .text(`QTY: ${label.qty}`, xPos + 4, yPos + 22, { align: 'center', width: labelWidth - 8 });
         
         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 32, { width: qrSize, height: qrSize });
+        doc.image(qrBuffer, qrX, yPos + 30, { width: qrSize, height: qrSize });
         
-        doc.fontSize(5).text(qrData, xPos + 4, yPos + 74, { align: 'center', width: labelWidth - 8 });
+        doc.fontSize(5).text(qrData, xPos + 4, yPos + 62, { align: 'center', width: labelWidth - 8 });
       }
     }
 
