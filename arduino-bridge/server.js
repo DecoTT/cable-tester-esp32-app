@@ -706,27 +706,27 @@ app.post('/api/stop-test', (req, res) => {
     });
 });
 
-// Improved temporary file cleanup with retry logic
-const cleanupTempFile = (filePath, maxRetries = 3, delay = 2000) => {
-  const cleanup = (attempt = 1) => {
-    setTimeout(() => {
-      try {
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`🗑️  Archivo temporal eliminado: ${path.basename(filePath)}`);
-        }
-      } catch (error) {
-        if (attempt < maxRetries && error.code === 'EBUSY') {
-          console.log(`⏳ Archivo ocupado, reintentando limpieza (${attempt}/${maxRetries})...`);
-          cleanup(attempt + 1);
-        } else {
-          console.error('❌ Error eliminando archivo temporal:', error.message);
-        }
+// ✅ FASE 2: Sistema de archivos temporales que NO elimina inmediatamente
+let tempFilesToCleanup = new Set();
+
+const scheduleFileForCleanup = (filePath) => {
+  tempFilesToCleanup.add(filePath);
+  console.log(`📁 Archivo programado para limpieza al cerrar: ${path.basename(filePath)}`);
+};
+
+const cleanupAllTempFiles = () => {
+  console.log(`🧹 Limpiando ${tempFilesToCleanup.size} archivos temporales...`);
+  for (const filePath of tempFilesToCleanup) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`🗑️  Archivo limpiado: ${path.basename(filePath)}`);
       }
-    }, delay * attempt);
-  };
-  
-  cleanup();
+    } catch (error) {
+      console.error(`❌ Error limpiando ${path.basename(filePath)}:`, error.message);
+    }
+  }
+  tempFilesToCleanup.clear();
 };
 
 // Enhanced label printing with better file handling and automatic logging
@@ -756,9 +756,15 @@ app.post('/api/print-labels', async (req, res) => {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
-    // Generate PDF with improved layout
+    // ✅ FASE 5: Layout de 2 etiquetas por línea horizontal
+    const labelsPerRow = 2;
+    const labelWidth = 93.6;  // 1.3" in points
+    const labelHeight = 72;   // 1" in points
+    const pageWidth = (labelWidth * labelsPerRow) + 16; // Add margins
+    const pageHeight = Math.ceil(labels.length / labelsPerRow) * labelHeight + 16;
+
     const doc = new PDFDocument({ 
-      size: [93.6, 72], // 1.3" x 1" in points
+      size: [pageWidth, pageHeight],
       margin: 8
     });
     
@@ -767,10 +773,11 @@ app.post('/api/print-labels', async (req, res) => {
 
     for (let i = 0; i < labels.length; i++) {
       const label = labels[i];
+      const row = Math.floor(i / labelsPerRow);
+      const col = i % labelsPerRow;
       
-      if (i > 0) {
-        doc.addPage();
-      }
+      const xPos = 8 + (col * labelWidth);
+      const yPos = 8 + (row * labelHeight);
 
       // Generate QR code with dot separators
       const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
@@ -783,20 +790,26 @@ app.post('/api/print-labels', async (req, res) => {
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
-      // Add content to PDF with improved positioning
+      // Draw border for each label
+      doc.rect(xPos, yPos, labelWidth - 2, labelHeight - 2).stroke();
+
+      // Add content to PDF - positioned for each label
       // SKU - Larger and at top
-      doc.fontSize(12).font('Helvetica-Bold').text(label.sku, 8, 6, { align: 'center', width: 77.6 });
+      doc.fontSize(12).font('Helvetica-Bold')
+         .text(label.sku, xPos + 4, yPos + 4, { align: 'center', width: labelWidth - 8 });
       
       // Information section with better spacing
-      doc.fontSize(8).font('Helvetica').text(`Fecha: ${label.date}`, 8, 18, { align: 'center', width: 77.6 });
-      doc.text(`Lote: ${label.lote}`, 8, 26, { align: 'center', width: 77.6 });
-      doc.text(`QTY: ${label.qty}`, 8, 34, { align: 'center', width: 77.6 });
+      doc.fontSize(8).font('Helvetica')
+         .text(`Fecha: ${label.date}`, xPos + 4, yPos + 16, { align: 'center', width: labelWidth - 8 })
+         .text(`Lote: ${label.lote}`, xPos + 4, yPos + 24, { align: 'center', width: labelWidth - 8 })
+         .text(`QTY: ${label.qty}`, xPos + 4, yPos + 32, { align: 'center', width: labelWidth - 8 });
       
-      // Add QR code - smaller and better positioned
-      doc.image(qrBuffer, 34.8, 42, { width: 24, height: 24 });
+      // Add QR code - centered
+      const qrX = xPos + (labelWidth / 2) - 12; // Center the 24px QR code
+      doc.image(qrBuffer, qrX, yPos + 40, { width: 24, height: 24 });
       
       // QR data text at bottom with dots
-      doc.fontSize(6).text(qrData, 8, 68, { align: 'center', width: 77.6 });
+      doc.fontSize(6).text(qrData, xPos + 4, yPos + 66, { align: 'center', width: labelWidth - 8 });
     }
 
     doc.end();
@@ -825,12 +838,12 @@ app.post('/api/print-labels', async (req, res) => {
           writeSystemLog('LABEL_PRINT_SUCCESS', 'Labels sent to printer successfully', { filename, printer: defaultPrinter });
         }
         
-        // Schedule cleanup with improved retry logic
-        cleanupTempFile(filepath, 5, 10000);
+        // ✅ FASE 2: No eliminar inmediatamente, programar para limpieza al cerrar
+        scheduleFileForCleanup(filepath);
       });
     } else {
       console.log('⚠️  No hay impresora configurada, PDF guardado solamente');
-      cleanupTempFile(filepath, 3, 10000);
+      scheduleFileForCleanup(filepath);
     }
 
     res.json({ 
@@ -1030,42 +1043,103 @@ app.post('/api/logs/export', (req, res) => {
   }
 });
 
+// ✅ FASE 1: Detección de impresoras compatible con Windows
 app.get('/api/printers', (req, res) => {
-  exec('lpstat -p', (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error listing printers: ${error.message}`);
-      return res.status(500).json({ success: false, message: 'Error obteniendo la lista de impresoras' });
-    }
-
-    const printers = stdout.split('\n')
-                           .filter(line => line.startsWith('printer'))
-                           .map(line => {
-                             const parts = line.split(' ');
-                             return {
-                               name: parts[1],
-                               displayName: parts[1],
-                               isDefault: line.includes('enabled') && line.includes('accepted')
-                             };
-                           });
-
-    exec('lpstat -d', (error, stdout, stderr) => {
-      let defaultPrinterName = null;
-      if (!error && stdout) {
-        const defaultPrinterLine = stdout.split('\n').find(line => line.startsWith('system default destination'));
-        if (defaultPrinterLine) {
-          defaultPrinterName = defaultPrinterLine.split(' ')[4].trim();
-        }
+  if (process.platform === 'win32') {
+    // Windows: Usar WMIC para obtener impresoras
+    exec('wmic printer list brief /format:csv', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error listing printers: ${error.message}`);
+        return res.status(500).json({ success: false, message: 'Error obteniendo la lista de impresoras' });
       }
 
-      res.json({
-        success: true,
-        printers: printers,
-        defaultPrinter: defaultPrinterName
+      const lines = stdout.split('\n').filter(line => line.trim() && !line.startsWith('Node'));
+      const printers = lines.map(line => {
+        const parts = line.split(',');
+        if (parts.length >= 3) {
+          return {
+            name: parts[2].trim(),
+            displayName: parts[2].trim(),
+            isDefault: parts[1] && parts[1].trim().toLowerCase() === 'true'
+          };
+        }
+      }).filter(printer => printer && printer.name);
+
+      // Obtener impresora predeterminada
+      exec('wmic printer where "default=true" get name /format:csv', (error, stdout, stderr) => {
+        let defaultPrinterName = null;
+        if (!error && stdout) {
+          const lines = stdout.split('\n').filter(line => line.trim() && !line.startsWith('Node'));
+          if (lines.length > 0) {
+            const parts = lines[0].split(',');
+            if (parts.length >= 2) {
+              defaultPrinterName = parts[1].trim();
+            }
+          }
+        }
+
+        // ✅ FASE 3: Auto-configurar primera impresora si no hay predeterminada
+        if (!defaultPrinterName && printers.length > 0) {
+          defaultPrinterName = printers[0].name;
+          defaultPrinter = defaultPrinterName;
+          console.log(`🖨️  Auto-configurada impresora predeterminada: ${defaultPrinterName}`);
+        } else if (defaultPrinterName) {
+          defaultPrinter = defaultPrinterName;
+        }
+
+        res.json({
+          success: true,
+          printers: printers,
+          defaultPrinter: defaultPrinterName
+        });
       });
     });
-  });
+  } else {
+    // Linux/Unix: Usar lpstat
+    exec('lpstat -p', (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error listing printers: ${error.message}`);
+        return res.status(500).json({ success: false, message: 'Error obteniendo la lista de impresoras' });
+      }
+
+      const printers = stdout.split('\n')
+                             .filter(line => line.startsWith('printer'))
+                             .map(line => {
+                               const parts = line.split(' ');
+                               return {
+                                 name: parts[1],
+                                 displayName: parts[1],
+                                 isDefault: line.includes('enabled') && line.includes('accepted')
+                               };
+                             });
+
+      exec('lpstat -d', (error, stdout, stderr) => {
+        let defaultPrinterName = null;
+        if (!error && stdout) {
+          const defaultPrinterLine = stdout.split('\n').find(line => line.startsWith('system default destination'));
+          if (defaultPrinterLine) {
+            defaultPrinterName = defaultPrinterLine.split(' ')[4].trim();
+          }
+        }
+
+        if (!defaultPrinterName && printers.length > 0) {
+          defaultPrinterName = printers[0].name;
+          defaultPrinter = defaultPrinterName;
+        } else if (defaultPrinterName) {
+          defaultPrinter = defaultPrinterName;
+        }
+
+        res.json({
+          success: true,
+          printers: printers,
+          defaultPrinter: defaultPrinterName
+        });
+      });
+    });
+  }
 });
 
+// ✅ FASE 3: Configurar impresora predeterminada compatible con Windows
 app.post('/api/set-default-printer', (req, res) => {
   const { printerName } = req.body;
 
@@ -1073,19 +1147,37 @@ app.post('/api/set-default-printer', (req, res) => {
     return res.status(400).json({ success: false, message: 'Printer name is required' });
   }
 
-  const command = `lpadmin -d "${printerName}"`;
+  if (process.platform === 'win32') {
+    // Windows: Usar wmic o PowerShell para establecer impresora predeterminada
+    const command = `powershell -Command "(Get-WmiObject -Class Win32_Printer -Filter \\\"Name='${printerName}'\\\").SetDefaultPrinter()"`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error setting default printer: ${error.message}`);
+        return res.status(500).json({ success: false, message: 'Error estableciendo la impresora predeterminada' });
+      }
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error setting default printer: ${error.message}`);
-      return res.status(500).json({ success: false, message: 'Error estableciendo la impresora predeterminada' });
-    }
+      defaultPrinter = printerName;
+      console.log(`🖨️  Impresora predeterminada establecida: ${printerName}`);
+      writeSystemLog('PRINTER_SET', 'Default printer set', { printer: printerName });
+      res.json({ success: true, message: `Impresora predeterminada establecida a ${printerName}` });
+    });
+  } else {
+    // Linux/Unix: Usar lpadmin
+    const command = `lpadmin -d "${printerName}"`;
 
-    defaultPrinter = printerName;
-    console.log(`Default printer set to: ${printerName}`);
-    writeSystemLog('PRINTER_SET', 'Default printer set', { printer: printerName });
-    res.json({ success: true, message: `Impresora predeterminada establecida a ${printerName}` });
-  });
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Error setting default printer: ${error.message}`);
+        return res.status(500).json({ success: false, message: 'Error estableciendo la impresora predeterminada' });
+      }
+
+      defaultPrinter = printerName;
+      console.log(`Default printer set to: ${printerName}`);
+      writeSystemLog('PRINTER_SET', 'Default printer set', { printer: printerName });
+      res.json({ success: true, message: `Impresora predeterminada establecida a ${printerName}` });
+    });
+  }
 });
 
 app.post('/api/generate-qr', async (req, res) => {
@@ -1143,6 +1235,19 @@ io.on('connection', (socket) => {
     writeSystemLog('CLIENT_DISCONNECT', 'Client disconnected', { socketId: socket.id, totalClients: connectedClients });
     io.emit('clientDisconnected', { connected: false, clients: connectedClients });
   });
+});
+
+// ✅ FASE 2: Configurar limpieza de archivos temporales al cerrar el bridge
+process.on('SIGINT', () => {
+  console.log('\n🛑 Cerrando servidor Arduino Bridge...');
+  cleanupAllTempFiles();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Cerrando servidor Arduino Bridge...');
+  cleanupAllTempFiles();
+  process.exit(0);
 });
 
 const PORT = 3001;
