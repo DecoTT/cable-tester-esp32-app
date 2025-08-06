@@ -124,16 +124,12 @@ const getCurrentTimeString = () => {
 };
 
 const getLogDirectory = (date = null) => {
-  const targetDate = date || getCurrentDateString();
-  const year = targetDate.substring(0, 4);
-  const month = targetDate.substring(4, 6);
-  const logDir = path.join(LOGS_DIR, year, month);
-  
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
+  // Los archivos ya tienen fecha codificada, no necesitamos subcarpetas
+  if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
   }
   
-  return logDir;
+  return LOGS_DIR;
 };
 
 const writeSystemLog = (type, message, data = null) => {
