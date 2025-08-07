@@ -16,6 +16,8 @@ interface LabelGeneratorProps {
   loteDatabase: Lote[];
   standardPack: number;
   onGeneratePartial: (count: number) => void;
+  labelType: 'standard' | 'large';
+  setLabelType: (type: 'standard' | 'large') => void;
 }
 
 const LabelGenerator: React.FC<LabelGeneratorProps> = ({ 
@@ -24,7 +26,9 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   okCount,
   loteDatabase,
   standardPack,
-  onGeneratePartial
+  onGeneratePartial,
+  labelType: propLabelType,
+  setLabelType
 }) => {
   const [manualQty, setManualQty] = useState(standardPack.toString());
   const [customSku, setCustomSku] = useState(currentSku);
@@ -33,7 +37,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
   const [selectedPrinter, setSelectedPrinter] = useState<string>('');
   const [qrPreviewAuto, setQrPreviewAuto] = useState<string>('');
   const [qrPreviewManual, setQrPreviewManual] = useState<string>('');
-  const [labelType, setLabelType] = useState<'standard' | 'large'>('standard');
+  const [labelType, setLocalLabelType] = useState<'standard' | 'large'>(propLabelType);
 
   useEffect(() => {
     setCustomSku(currentSku);
@@ -74,6 +78,16 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
       }).catch(console.error);
     }
   }, [customSku, customLote, manualQty]);
+
+  // Sync labelType with parent
+  useEffect(() => {
+    setLocalLabelType(propLabelType);
+  }, [propLabelType]);
+
+  const handleLabelTypeChange = (newType: 'standard' | 'large') => {
+    setLocalLabelType(newType);
+    setLabelType(newType); // Communicate change to QualityApp
+  };
 
   const loadPrinters = async () => {
     try {
@@ -312,7 +326,7 @@ const LabelGenerator: React.FC<LabelGeneratorProps> = ({
             <div className="flex items-center space-x-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium mb-2">Tamaño de Etiqueta</label>
-                <Select value={labelType} onValueChange={(value: 'standard' | 'large') => setLabelType(value)}>
+                <Select value={labelType} onValueChange={handleLabelTypeChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Seleccione tamaño de etiqueta" />
                   </SelectTrigger>

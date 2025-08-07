@@ -52,6 +52,7 @@ const QualityApp = () => {
   const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
+  const [labelType, setLabelType] = useState<'standard' | 'large'>('standard');
   const seenCodigosRef = useRef<Set<string>>(new Set());
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -547,7 +548,7 @@ const QualityApp = () => {
 
     try {
       console.log(`🖨️  Enviando ${labelsToGenerate.length} etiquetas para impresión automática...`);
-      await printLabels(labelsToGenerate);
+      await printLabels(labelsToGenerate, labelType);
       
       console.log(`✅ Impresión automática exitosa - Lote ${currentLote}`);
       
@@ -763,6 +764,8 @@ const QualityApp = () => {
                 loteDatabase={loteDatabase}
                 standardPack={currentStandardPack}
                 onGeneratePartial={generatePartialLabel}
+                labelType={labelType}
+                setLabelType={setLabelType}
               />
             )}
 
