@@ -52,7 +52,7 @@ const QualityApp = () => {
   const [arduinoMessages, setArduinoMessages] = useState<ArduinoMessage[]>([]);
   const [realTimeProcessing, setRealTimeProcessing] = useState(true);
   const [isDatabaseLoaded, setIsDatabaseLoaded] = useState(false);
-  const [labelType, setLabelType] = useState<'standard' | 'large'>('standard');
+  const [labelType, setLabelType] = useState<'standard' | 'large'>('large');
   const seenCodigosRef = useRef<Set<string>>(new Set());
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
