@@ -871,6 +871,17 @@ app.post('/api/print-labels', async (req, res) => {
     const stream = fs.createWriteStream(filepath);
     doc.pipe(stream);
 
+    // Verificar si existe logo
+    const logoPath = path.join(__dirname, 'logo.png');
+    let logoBuffer = null;
+
+    if (fs.existsSync(logoPath)) {
+      logoBuffer = fs.readFileSync(logoPath);
+      console.log('✅ Logo cargado correctamente');
+    } else {
+      console.log('ℹ️ No se encontró logo.png, continuando sin logo');
+    }
+
     for (let i = 0; i < labels.length; i++) {
       const label = labels[i];
       const row = Math.floor(i / labelsPerRow);
@@ -890,33 +901,42 @@ app.post('/api/print-labels', async (req, res) => {
       // Convert data URL to buffer
       const qrBuffer = Buffer.from(qrCodeDataURL.split(',')[1], 'base64');
 
+      // Insertar logo si existe
+      if (logoBuffer) {
+        doc.image(logoBuffer, xPos + 2, yPos + 2);
+      }
+
       if (labelType === 'large') {
-        // Layout para etiqueta grande (7.5cm x 5cm)
+        // Layout para etiqueta grande (7.5cm x 5cm) - ajustar posición del título
+        const titleYPos = logoBuffer ? yPos + 32 : yPos + 2;
         doc.fontSize(titleSize).font('Helvetica-Bold')
-           .text(label.sku, xPos + 4, yPos + 2, { align: 'center', width: labelWidth - 8 });
+           .text(label.sku, xPos + 4, titleYPos, { align: 'center', width: labelWidth - 8 });
         
+        const textYOffset = logoBuffer ? 30 : 0;
         doc.fontSize(fontSize).font('Helvetica')
-           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 18, { align: 'center', width: labelWidth - 8 })
-           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 28, { align: 'center', width: labelWidth - 8 })
-           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 38, { align: 'center', width: labelWidth - 8 });
+           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 18 + textYOffset, { align: 'center', width: labelWidth - 8 })
+           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 28 + textYOffset, { align: 'center', width: labelWidth - 8 })
+           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 38 + textYOffset, { align: 'center', width: labelWidth - 8 });
         
         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 50, { width: qrSize, height: qrSize });
+        doc.image(qrBuffer, qrX, yPos + 50 + textYOffset, { width: qrSize, height: qrSize });
         
-        doc.fontSize(8).text(qrData, xPos + 4, yPos + 140, { align: 'center', width: labelWidth - 8 });
+        doc.fontSize(8).text(qrData, xPos + 4, yPos + 140 + textYOffset, { align: 'center', width: labelWidth - 8 });
       } else {
-        // Layout para etiqueta standard (1.3" x 1")
+        // Layout para etiqueta standard (1.3" x 1") - ajustar posición del título
+        const titleYPos = logoBuffer ? yPos + 12 : yPos + 2;
         doc.fontSize(titleSize).font('Helvetica-Bold')
-           .text(label.sku, xPos + 4, yPos + 2, { align: 'center', width: labelWidth - 8 });
+           .text(label.sku, xPos + 4, titleYPos, { align: 'center', width: labelWidth - 8 });
         
+        const textYOffset = logoBuffer ? 10 : 0;
         doc.fontSize(fontSize).font('Helvetica')
-           .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 14, { align: 'center', width: labelWidth - 8 })
-           .text(`QTY: ${label.qty}`, xPos + 4, yPos + 22, { align: 'center', width: labelWidth - 8 });
+           .text(`${label.date} | L:${label.lote}`, xPos + 4, yPos + 14 + textYOffset, { align: 'center', width: labelWidth - 8 })
+           .text(`QTY: ${label.qty}`, xPos + 4, yPos + 22 + textYOffset, { align: 'center', width: labelWidth - 8 });
         
         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 30, { width: qrSize, height: qrSize });
+        doc.image(qrBuffer, qrX, yPos + 30 + textYOffset, { width: qrSize, height: qrSize });
         
-        doc.fontSize(5).text(qrData, xPos + 4, yPos + 62, { align: 'center', width: labelWidth - 8 });
+        doc.fontSize(5).text(qrData, xPos + 4, yPos + 62 + textYOffset, { align: 'center', width: labelWidth - 8 });
       }
     }
 
