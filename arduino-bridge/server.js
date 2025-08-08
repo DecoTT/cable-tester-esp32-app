@@ -929,12 +929,12 @@ app.post('/api/print-labels', async (req, res) => {
         
          const textYOffset = logoBuffer ? 8 : 0;
          doc.fontSize(fontSize).font('Helvetica')
-            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 11 + textYOffset, { align: 'center', width: labelWidth - 8 })
-            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 19 + textYOffset, { align: 'center', width: labelWidth - 8 })
-            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 27 + textYOffset, { align: 'center', width: labelWidth - 8 });
+            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 14 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 22 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 30 + textYOffset, { align: 'center', width: labelWidth - 8 });
          
          const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-         doc.image(qrBuffer, qrX, yPos + 42 + textYOffset, { width: qrSize, height: qrSize });
+         doc.image(qrBuffer, qrX, yPos + 37 + textYOffset, { width: qrSize, height: qrSize });
          
          doc.fontSize(8).text(qrData, xPos + 4, yPos + 120 + textYOffset, { align: 'center', width: labelWidth - 8 });
       } else {
