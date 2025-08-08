@@ -842,12 +842,12 @@ app.post('/api/print-labels', async (req, res) => {
     let labelsPerRow, labelWidth, labelHeight, pageWidth, pageHeight, qrSize, fontSize, titleSize;
     
     if (labelType === 'large') {
-      // 7.5cm x 5cm = 212.6 x 141.7 points (1 por página)
+      // 7.5cm x 5cm = 212.6 x 141.7 points (1 por página, orientación horizontal)
       labelsPerRow = 1;
       labelWidth = 212.6;
       labelHeight = 141.7;
       pageWidth = labelWidth + 16;
-      pageHeight = (labelHeight * labels.length) + 16;
+      pageHeight = labelHeight + 16; // Una etiqueta por página, orientación horizontal
       qrSize = 80;
       fontSize = 7;
       titleSize = 18;
