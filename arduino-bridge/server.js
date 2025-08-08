@@ -846,8 +846,8 @@ app.post('/api/print-labels', async (req, res) => {
       labelsPerRow = 1;
       labelWidth = 212.6;
       labelHeight = 141.7;
-      pageWidth = labelWidth + 16;
-      pageHeight = labelHeight + 16; // Una etiqueta por página, orientación horizontal
+      pageWidth = labelWidth + 4;   // Márgenes mínimos
+      pageHeight = labelHeight + 4; // Una etiqueta por página, orientación horizontal
       qrSize = 80;
       fontSize = 7;
       titleSize = 18;
@@ -867,6 +867,9 @@ app.post('/api/print-labels', async (req, res) => {
       size: [pageWidth, pageHeight],
       margin: 2
     });
+
+    // AGREGAR logging de debug
+    console.log(`📐 PDF Config - Tipo: ${labelType}, Tamaño: ${pageWidth}x${pageHeight} points (${(pageWidth * 0.352778).toFixed(1)}x${(pageHeight * 0.352778).toFixed(1)} mm)`);
     
     const stream = fs.createWriteStream(filepath);
     doc.pipe(stream);
@@ -884,11 +887,26 @@ app.post('/api/print-labels', async (req, res) => {
 
     for (let i = 0; i < labels.length; i++) {
       const label = labels[i];
-      const row = Math.floor(i / labelsPerRow);
-      const col = i % labelsPerRow;
       
-      const xPos = 2 + (col * labelWidth);
-      const yPos = 2 + (row * labelHeight);
+      let xPos, yPos;
+      
+      if (labelType === 'large') {
+        // Para etiquetas large: una por página
+        if (i > 0) {
+          doc.addPage({
+            size: [pageWidth, pageHeight],
+            margin: 2
+          });
+        }
+        xPos = 2;
+        yPos = 2;
+      } else {
+        // Para etiquetas standard: grid layout
+        const row = Math.floor(i / labelsPerRow);
+        const col = i % labelsPerRow;
+        xPos = 2 + (col * labelWidth);
+        yPos = 2 + (row * labelHeight);
+      }
 
       // Generate QR code with dot separators
       const qrData = `${label.sku}.${label.date}.${label.qty}.${label.lote}`;
