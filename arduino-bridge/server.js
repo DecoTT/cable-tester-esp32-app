@@ -923,18 +923,18 @@ app.post('/api/print-labels', async (req, res) => {
 
       if (labelType === 'large') {
         // Layout para etiqueta grande (7.5cm x 5cm) - layout compacto
-        const titleYPos = logoBuffer ? yPos + 20 : yPos + 2;
+        const titleYPos = logoBuffer ? yPos + 5 : yPos + 2;
         doc.fontSize(titleSize).font('Helvetica-Bold')
            .text(label.sku, xPos + 4, titleYPos, { align: 'center', width: labelWidth - 8 });
         
          const textYOffset = logoBuffer ? 8 : 0;
          doc.fontSize(fontSize).font('Helvetica')
-            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 8 + textYOffset, { align: 'center', width: labelWidth - 8 })
-            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 16 + textYOffset, { align: 'center', width: labelWidth - 8 })
-            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 24 + textYOffset, { align: 'center', width: labelWidth - 8 });
+            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 25 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 33 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 41 + textYOffset, { align: 'center', width: labelWidth - 8 });
          
          const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-         doc.image(qrBuffer, qrX, yPos + 35 + textYOffset, { width: qrSize, height: qrSize });
+         doc.image(qrBuffer, qrX, yPos + 55 + textYOffset, { width: qrSize, height: qrSize });
          
          doc.fontSize(8).text(qrData, xPos + 4, yPos + 115 + textYOffset, { align: 'center', width: labelWidth - 8 });
       } else {
