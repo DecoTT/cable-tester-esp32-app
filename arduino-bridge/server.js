@@ -918,25 +918,25 @@ app.post('/api/print-labels', async (req, res) => {
 
       // Insertar logo si existe
       if (logoBuffer) {
-        doc.image(logoBuffer, xPos + 2, yPos + 2);
+        doc.image(logoBuffer, xPos + 2, yPos);
       }
 
       if (labelType === 'large') {
-        // Layout para etiqueta grande (7.5cm x 5cm) - ajustar posición del título
-        const titleYPos = logoBuffer ? yPos + 32 : yPos + 2;
+        // Layout para etiqueta grande (7.5cm x 5cm) - layout compacto
+        const titleYPos = logoBuffer ? yPos + 20 : yPos + 2;
         doc.fontSize(titleSize).font('Helvetica-Bold')
            .text(label.sku, xPos + 4, titleYPos, { align: 'center', width: labelWidth - 8 });
         
-        const textYOffset = logoBuffer ? 30 : 0;
+        const textYOffset = logoBuffer ? 18 : 0;
         doc.fontSize(fontSize).font('Helvetica')
            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 18 + textYOffset, { align: 'center', width: labelWidth - 8 })
            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 28 + textYOffset, { align: 'center', width: labelWidth - 8 })
            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 38 + textYOffset, { align: 'center', width: labelWidth - 8 });
         
         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 50 + textYOffset, { width: qrSize, height: qrSize });
+        doc.image(qrBuffer, qrX, yPos + 45 + textYOffset, { width: qrSize, height: qrSize });
         
-        doc.fontSize(8).text(qrData, xPos + 4, yPos + 140 + textYOffset, { align: 'center', width: labelWidth - 8 });
+        doc.fontSize(8).text(qrData, xPos + 4, yPos + 125 + textYOffset, { align: 'center', width: labelWidth - 8 });
       } else {
         // Layout para etiqueta standard (1.3" x 1") - ajustar posición del título
         const titleYPos = logoBuffer ? yPos + 12 : yPos + 2;
