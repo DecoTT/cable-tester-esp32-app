@@ -842,12 +842,12 @@ app.post('/api/print-labels', async (req, res) => {
     let labelsPerRow, labelWidth, labelHeight, pageWidth, pageHeight, qrSize, fontSize, titleSize;
     
     if (labelType === 'large') {
-      // 7.5cm x 5cm = 212.6 x 141.7 points (1 por página, orientación horizontal)
+      // 7.5cm x 5cm = 212.6 x 141.7 points exactos (1 por página, orientación horizontal)
       labelsPerRow = 1;
-      labelWidth = 212.6;
-      labelHeight = 141.7;
-      pageWidth = labelWidth + 4;   // Márgenes mínimos
-      pageHeight = labelHeight + 4; // Una etiqueta por página, orientación horizontal
+      labelWidth = 212.6;   // 7.5cm exacto
+      labelHeight = 141.7;  // 5cm exacto
+      pageWidth = 212.6;    // Página = tamaño de etiqueta exacto
+      pageHeight = 141.7;   // Sin márgenes adicionales
       qrSize = 80;
       fontSize = 7;
       titleSize = 18;
@@ -865,7 +865,7 @@ app.post('/api/print-labels', async (req, res) => {
 
     const doc = new PDFDocument({ 
       size: [pageWidth, pageHeight],
-      margin: 2
+      margin: 0
     });
 
     // AGREGAR logging de debug
@@ -891,15 +891,12 @@ app.post('/api/print-labels', async (req, res) => {
       let xPos, yPos;
       
       if (labelType === 'large') {
-        // Para etiquetas large: una por página
+        // Para etiquetas large: una por página, tamaño exacto
         if (i > 0) {
-          doc.addPage({
-            size: [pageWidth, pageHeight],
-            margin: 2
-          });
+          doc.addPage();
         }
-        xPos = 2;
-        yPos = 2;
+        xPos = 0;
+        yPos = 0;
       } else {
         // Para etiquetas standard: grid layout
         const row = Math.floor(i / labelsPerRow);
