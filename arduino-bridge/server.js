@@ -927,16 +927,16 @@ app.post('/api/print-labels', async (req, res) => {
         doc.fontSize(titleSize).font('Helvetica-Bold')
            .text(label.sku, xPos + 4, titleYPos, { align: 'center', width: labelWidth - 8 });
         
-        const textYOffset = logoBuffer ? 18 : 0;
-        doc.fontSize(fontSize).font('Helvetica')
-           .text(`Fecha: ${label.date}`, xPos + 4, yPos + 18 + textYOffset, { align: 'center', width: labelWidth - 8 })
-           .text(`Lote: ${label.lote}`, xPos + 4, yPos + 28 + textYOffset, { align: 'center', width: labelWidth - 8 })
-           .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 38 + textYOffset, { align: 'center', width: labelWidth - 8 });
-        
-        const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
-        doc.image(qrBuffer, qrX, yPos + 45 + textYOffset, { width: qrSize, height: qrSize });
-        
-        doc.fontSize(8).text(qrData, xPos + 4, yPos + 125 + textYOffset, { align: 'center', width: labelWidth - 8 });
+         const textYOffset = logoBuffer ? 8 : 0;
+         doc.fontSize(fontSize).font('Helvetica')
+            .text(`Fecha: ${label.date}`, xPos + 4, yPos + 8 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Lote: ${label.lote}`, xPos + 4, yPos + 16 + textYOffset, { align: 'center', width: labelWidth - 8 })
+            .text(`Cantidad: ${label.qty}`, xPos + 4, yPos + 24 + textYOffset, { align: 'center', width: labelWidth - 8 });
+         
+         const qrX = xPos + (labelWidth / 2) - (qrSize / 2);
+         doc.image(qrBuffer, qrX, yPos + 35 + textYOffset, { width: qrSize, height: qrSize });
+         
+         doc.fontSize(8).text(qrData, xPos + 4, yPos + 115 + textYOffset, { align: 'center', width: labelWidth - 8 });
       } else {
         // Layout para etiqueta standard (1.3" x 1") - ajustar posición del título
         const titleYPos = logoBuffer ? yPos + 12 : yPos + 2;
