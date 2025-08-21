@@ -434,8 +434,15 @@ const printPDFFile = (filepath, printerName) => {
     let printCommand;
 
     if (process.platform === 'win32') {
-      // Comando mejorado para Windows usando PowerShell
-      printCommand = `powershell -Command "Start-Process -FilePath ${escapedPath} -Verb Print -Wait"`;
+      // Comando específico según tipo de impresora
+      if (printerName && printerName.toLowerCase().includes('pdf')) {
+        // Para impresoras PDF virtuales, usar método actual
+        printCommand = `powershell -Command "Start-Process -FilePath ${escapedPath} -Verb Print -Wait"`;
+      } else {
+        // Para impresoras físicas como Zebra, enviar directamente a la impresora específica
+        const escapedPrinterName = printerName.replace(/"/g, '""');
+        printCommand = `powershell -Command "Get-Content '${filepath}' -Raw -Encoding Byte | Out-Printer -Name '${escapedPrinterName}'"`;
+      }
     } else {
       // Linux/Mac
       printCommand = `lp -d "${printerName}" "${filepath}"`;
