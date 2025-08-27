@@ -55,7 +55,6 @@ const QualityApp = () => {
   const [labelType, setLabelType] = useState<'standard' | 'large'>('large');
   const seenCodigosRef = useRef<Set<string>>(new Set());
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const previousSkuRef = useRef<string>('');
 
   useEffect(() => {
     const savedSkus = localStorage.getItem('quality_skus');
@@ -163,106 +162,6 @@ const QualityApp = () => {
       }
     }
   }, [currentSku, skuDatabase]);
-
-  // Handle SKU changes with partial label printing and counter reset
-  useEffect(() => {
-    const handleSkuChange = async () => {
-      const previousSku = previousSkuRef.current;
-      
-      // If there's a previous SKU and it's different from current
-      if (previousSku && previousSku !== currentSku && currentSku) {
-        console.log(`🔄 Detectado cambio de SKU: ${previousSku} → ${currentSku}`);
-        
-        // Calculate partial count based on previous SKU's standard pack
-        const previousSkuData = skuDatabase.find(s => s.codigo === previousSku);
-        const previousStandardPack = previousSkuData?.standardPack || 10;
-        const partialCount = okCount % previousStandardPack;
-        
-        // Log statistics for previous SKU
-        const previousSkuResults = testResults.filter(r => r.sku === previousSku);
-        const previousTotalProcessed = totalProcessed;
-        const previousBadCount = previousTotalProcessed - okCount;
-        
-        console.log(`📊 Estadísticas SKU ${previousSku}: Total procesados ${previousTotalProcessed}, ${okCount} OK, ${previousBadCount} malos`);
-        
-        // Generate partial label if needed
-        if (partialCount > 0) {
-          console.log(`🏷️  Generando etiqueta parcial: ${partialCount} unidades del SKU ${previousSku}`);
-          
-          try {
-            // Use the previous SKU and its standard pack for partial label
-            const partialLabel = {
-              sku: previousSku,
-              date: getCurrentDateString(),
-              qty: partialCount.toString(),
-              lote: incrementLote(currentLote)
-            };
-
-            const partialLote: Lote = {
-              id: incrementLote(currentLote),
-              sku: previousSku,
-              fecha: getCurrentDateString(),
-              operador: currentOperator,
-              cantidad: partialCount,
-              buenos: partialCount,
-              malos: 0,
-              procesados: partialCount
-            };
-            
-            setLoteDatabase(prev => [...prev, partialLote]);
-            
-            await printLabels([partialLabel], labelType);
-            
-            setCurrentLote(incrementLote(incrementLote(currentLote)));
-            
-            toast({
-              title: "🏷️ Etiqueta Parcial por Cambio de SKU",
-              description: `Etiqueta parcial impresa: ${partialCount} unidades del SKU ${previousSku}`,
-            });
-            
-          } catch (error) {
-            console.error('❌ Error generando etiqueta parcial:', error);
-            toast({
-              title: "⚠️ Error en etiqueta parcial",
-              description: `Error imprimiendo etiqueta parcial: ${(error as Error).message}`,
-              variant: "destructive"
-            });
-          }
-        }
-        
-        // Create SKU change log entry
-        const skuChangeResult: TestResult = {
-          id: `SKU_CHANGE_${Date.now()}`,
-          sku: `CAMBIO: ${previousSku} → ${currentSku}`,
-          result: `Total procesados ${previousTotalProcessed}, ${okCount} OK, ${previousBadCount} malos${partialCount > 0 ? `, etiqueta parcial ${partialCount}` : ''}`,
-          startTime: new Date(),
-          endTime: new Date(),
-          duration: 0,
-          operator: currentOperator,
-          date: getCurrentDateString()
-        };
-        
-        setTestResults(prev => [skuChangeResult, ...prev]);
-        
-        // Reset counters for new SKU
-        console.log(`🔄 Reseteando contadores para nuevo SKU: ${currentSku}`);
-        setOkCount(0);
-        setTotalProcessed(0);
-        
-        toast({
-          title: "🔄 Cambio de SKU Completado",
-          description: `SKU cambiado de ${previousSku} a ${currentSku}. Contadores reseteados.`,
-        });
-      }
-      
-      // Update previous SKU reference
-      previousSkuRef.current = currentSku;
-    };
-    
-    if (isDatabaseLoaded && currentSku) {
-      handleSkuChange();
-    }
-  }, [currentSku, isDatabaseLoaded, skuDatabase, okCount, totalProcessed, testResults, currentOperator, currentLote, labelType]);
 
   useEffect(() => {
     const initializeArduinoService = async () => {
@@ -423,21 +322,12 @@ const QualityApp = () => {
         // Check for automatic printing in a separate effect to ensure state is updated
         setTimeout(async () => {
           if (newOkCount % (currentStandardPack * 2) === 0) {
-            if (labelType === 'standard') {
-              console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
-              console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
-              await generateAutomaticLabels();
-            } else {
-              console.log(`📊 Threshold alcanzado (${newOkCount} cables OK) pero impresión automática DESHABILITADA para etiquetas LARGE`);
-              console.log(`🏷️  Usar impresión manual cuando sea necesario`);
-              toast({
-                title: "📊 Threshold Alcanzado",
-                description: `${newOkCount} cables completados. Impresión automática deshabilitada para etiquetas LARGE.`,
-              });
-            }
+            console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
+            console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
+            await generateAutomaticLabels();
           } else {
             const remainingForNextPrint = (currentStandardPack * 2) - (newOkCount % (currentStandardPack * 2));
-            console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más${labelType === 'large' ? ' (deshabilitada para LARGE)' : ''}`);
+            console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más`);
           }
         }, 0);
         
