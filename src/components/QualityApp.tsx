@@ -423,12 +423,21 @@ const QualityApp = () => {
         // Check for automatic printing in a separate effect to ensure state is updated
         setTimeout(async () => {
           if (newOkCount % (currentStandardPack * 2) === 0) {
-            console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
-            console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
-            await generateAutomaticLabels();
+            if (labelType === 'standard') {
+              console.log(`🚀 ¡IMPRESIÓN AUTOMÁTICA ACTIVADA! Alcanzado ${newOkCount} cables OK (threshold: ${currentStandardPack * 2})`);
+              console.log(`📦 Generando ${currentStandardPack * 2} cables en 2 etiquetas de ${currentStandardPack} c/u`);
+              await generateAutomaticLabels();
+            } else {
+              console.log(`📊 Threshold alcanzado (${newOkCount} cables OK) pero impresión automática DESHABILITADA para etiquetas LARGE`);
+              console.log(`🏷️  Usar impresión manual cuando sea necesario`);
+              toast({
+                title: "📊 Threshold Alcanzado",
+                description: `${newOkCount} cables completados. Impresión automática deshabilitada para etiquetas LARGE.`,
+              });
+            }
           } else {
             const remainingForNextPrint = (currentStandardPack * 2) - (newOkCount % (currentStandardPack * 2));
-            console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más`);
+            console.log(`⏳ Próxima impresión automática en ${remainingForNextPrint} cables OK más${labelType === 'large' ? ' (deshabilitada para LARGE)' : ''}`);
           }
         }, 0);
         
