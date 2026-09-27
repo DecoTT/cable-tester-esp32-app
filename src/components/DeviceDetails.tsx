@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ToggleLeft, TriangleAlert, RefreshCw } from "lucide-react";
+import { ToggleLeft, TriangleAlert, RefreshCw, HardDriveDownload, Wifi } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { api, type TesterUnit } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 
@@ -43,6 +44,61 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
   // jobs pertenece la unidad, no lo que haya en pantalla: pulsar aqui no puede
   // arrancar el producto de otro puesto.
   const [queCorre, setQueCorre] = useState<{ correria: string | null; motivo: string | null; candidatos: string[] } | null>(null);
+
+  // ── El job que lleva DENTRO el equipo ────────────────────────────────
+  //
+  // Distinto del job que corre la PC: este vive en la NVS del ESP32 y es lo
+  // que le permite juzgar una pieza sin ordenador. Se lee del equipo, no de la
+  // base: lo que importa es lo que TIENE, no lo que creemos haberle mandado.
+  const [golden, setGolden] = useState<any>(null);
+  const [jobElegido, setJobElegido] = useState<string>("");
+  const [cargando2, setCargando2] = useState(false);
+  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.medida.jobs().then((d) => d.jobs) });
+
+  // Solo los de UNA unidad: el modo autónomo mide con un equipo, y un arnés de
+  // tres no se puede probar sin PC.
+  const jobsDeUnEquipo = (jobs.data ?? []).filter((j: any) => {
+    try { return JSON.parse(j.hosts || "[]").length === 1 && j.status === "approved"; }
+    catch { return false; }
+  });
+
+  const cargarGolden = async (mac: string) => {
+    try {
+      const g = await api.testers.goldenDe(mac);
+      setGolden(g.ok ? g.golden : null);
+    } catch { setGolden(null); }
+  };
+
+  const montarJob = async (autonomo: boolean) => {
+    if (!unidad || !jobElegido) return;
+    setCargando2(true);
+    try {
+      const r = await api.testers.cargarJob(unidad.mac, Number(jobElegido), autonomo, "configuracion");
+      if (!r.ok) {
+        toast({ variant: "destructive", title: "No se montó el job", description: r.error });
+      } else {
+        toast({
+          title: autonomo ? "Equipo listo para trabajar solo" : "Job montado en el equipo",
+          description: autonomo
+            ? "Tiene el golden y el botón mide por su cuenta. Sin PC no hay lote ni etiqueta."
+            : "El golden quedó grabado. El botón sigue avisando a la PC.",
+        });
+      }
+      await cargarGolden(unidad.mac);
+      await cargar();
+    } finally { setCargando2(false); }
+  };
+
+  const volverAsistido = async () => {
+    if (!unidad) return;
+    setCargando2(true);
+    try {
+      const r = await api.testers.modoAsistido(unidad.mac, "configuracion");
+      if (!r.ok) toast({ variant: "destructive", title: "No se pudo cambiar", description: r.error });
+      else toast({ title: "Vuelve a medir la PC", description: "El botón avisa y la app corre la prueba." });
+      await cargar();
+    } finally { setCargando2(false); }
+  };
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
@@ -65,6 +121,7 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
       api.boton()
         .then((b) => setQueCorre(b.vigilando.find((x) => x.mac === unidad.mac) ?? null))
         .catch(() => setQueCorre(null));
+      cargarGolden(unidad.mac);
       const t = d.trigger;
       setActivo(!!t && t.pin >= 0);
       if (t && t.pin >= 0) setPin(t.pin);
@@ -274,6 +331,84 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
             Se guarda en la memoria del propio equipo: sobrevive a reinicios y a una
             actualización por OTA, y viaja con él si cambia de estación. El producto lo
             decide <strong>el equipo que se pulsa</strong>, no la pantalla.
+          </p>
+        </div>
+
+        {/* ── Job montado en el equipo ── */}
+        <div className="border rounded-lg p-4 space-y-3">
+          <div>
+            <p className="font-medium flex items-center gap-2">
+              <HardDriveDownload className="w-4 h-4" /> Job montado en el equipo
+            </p>
+            <p className="text-xs text-gray-500">
+              El golden grabado en la memoria del ESP32. Es lo que le permite juzgar una
+              pieza <strong>sin PC</strong>. Distinto del job que corre la app: este vive
+              dentro del equipo y se lee de él, no de la base.
+            </p>
+          </div>
+
+          {/* loaded=false con crc≠0 NO es "sin golden": es CORRUPTO. Lo dice el
+              propio firmware, y confundir los dos casos manda a buscar por el
+              lado equivocado. */}
+          <div className="text-sm rounded border bg-slate-50 p-2">
+            {golden?.loaded
+              ? <>Lleva <b>{golden.sku || "(sin SKU)"}</b>
+                  {golden.nets_count != null && <> · {golden.nets_count} conexiones</>}
+                  {golden.crc != null && <span className="font-mono text-xs text-gray-500"> · crc {golden.crc}</span>}
+                </>
+              : golden && Number(golden.crc) !== 0
+                ? <span className="text-amber-800">
+                    <b>Golden corrupto</b> — hay algo grabado (crc {golden.crc}) pero el CRC no
+                    cuadra. Vuelve a montarlo antes de dejarlo solo.
+                  </span>
+                : <span className="text-gray-500">Sin golden grabado: este equipo no puede juzgar nada solo.</span>}
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-2">
+            <div className="sm:col-span-2">
+              <Label htmlFor="job">Montar este producto</Label>
+              <Select value={jobElegido} onValueChange={setJobElegido}>
+                <SelectTrigger id="job"><SelectValue placeholder="Elige un producto…" /></SelectTrigger>
+                <SelectContent>
+                  {jobsDeUnEquipo.map((j: any) => (
+                    <SelectItem key={j.id} value={String(j.id)}>
+                      {j.sku} — {j.nets_count ?? "?"} conexiones
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!jobsDeUnEquipo.length && (
+                <p className="text-xs text-amber-700 mt-1">
+                  No hay productos de una sola unidad aprobados. Un arnés que usa varios
+                  equipos no se puede probar sin PC.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={!jobElegido || cargando2 || !info?.ok}
+                    onClick={() => montarJob(false)}>
+              Solo grabar el golden
+            </Button>
+            <Button disabled={!jobElegido || cargando2 || !info?.ok}
+                    onClick={() => montarJob(true)}>
+              <Wifi className="w-4 h-4 mr-2" />
+              {cargando2 ? "Montando…" : "Dejarlo listo para trabajar solo"}
+            </Button>
+            {t?.pin != null && t.pin >= 0 && (t as any).mode === "local" && (
+              <Button variant="ghost" disabled={cargando2} onClick={volverAsistido}>
+                Volver a que mida la PC
+              </Button>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-500">
+            <strong>Trabajar solo</strong> = golden grabado + botón en modo local. Mide y
+            canta el veredicto en los LEDs sin ordenador, pero <strong>no hay lote, ni
+            etiqueta, ni quién lo probó</strong>: sirve para no parar la línea si se cae la
+            PC, no para producir a ciegas. Se comprueba el CRC de lo grabado contra el de
+            la base; si no cuadra, no se da por bueno.
           </p>
         </div>
       </DialogContent>

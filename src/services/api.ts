@@ -161,6 +161,20 @@ export const api = {
       j<{ ok: boolean; trigger?: { pin: number; active_low: boolean; mode?: string }; error?: string }>(
         `/api/testers/${mac}/trigger`,
         { method: "POST", body: JSON.stringify({ pin, active_low, actor, mode }) }),
+    // Job grabado EN el equipo (su NVS). Es lo que le permite juzgar una pieza
+    // sin PC.
+    goldenDe:    (mac: string) => j<{
+      ok: boolean; error?: string;
+      golden?: { loaded?: boolean; sku?: string; job?: string; nets?: number; crc?: number; meta?: string };
+    }>(`/api/testers/${mac}/golden`),
+    cargarJob:   (mac: string, job_id: number, autonomo: boolean, actor?: string) =>
+      j<{ ok: boolean; error?: string; crc_match?: boolean;
+          disparador?: { pin: number; active_low: boolean; mode?: string } }>(
+        `/api/testers/${mac}/push-job`,
+        { method: "POST", body: JSON.stringify({ job_id, autonomo, actor }) }),
+    modoAsistido: (mac: string, actor?: string) =>
+      j<{ ok: boolean; error?: string }>(`/api/testers/${mac}/asistido`,
+        { method: "POST", body: JSON.stringify({ actor }) }),
     connect:     (opts: { host?: string; port?: number; serialPath?: string }, actor?: string) =>
       j<{ ok: boolean; status?: TesterStatus; via?: string; error?: string }>("/api/testers/connect",
         { method: "POST", body: JSON.stringify({ ...opts, actor }) }),

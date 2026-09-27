@@ -40,7 +40,7 @@ function IconoTipo({ tipo }: { tipo: string }) {
   return <CircleHelp className="w-4 h-4 text-slate-400" />;
 }
 
-export default function DiagnosticoTab({ skuActivo }: { skuActivo: string }) {
+export default function DiagnosticoTab({ skuActivo, equipo }: { skuActivo: string; equipo: string }) {
   const { toast } = useToast();
   const [desde, setDesde] = useState(haceN(30));
   const [hasta, setHasta] = useState(hoy());
@@ -51,6 +51,18 @@ export default function DiagnosticoTab({ skuActivo }: { skuActivo: string }) {
   // operador tiene puesto en la pantalla de produccion.
   const [sku, setSku]     = useState(skuActivo);
   useEffect(() => { setSku(skuActivo); }, [skuActivo]);
+
+  // Si hay un EQUIPO fijado arriba, manda él: "voy a ver qué le pasa a la
+  // 8744" no debería obligar a adivinar antes qué producto lleva puesto.
+  const estaciones = useQuery({
+    queryKey: ["estaciones"], queryFn: api.estaciones.list,
+    enabled: !!equipo, refetchInterval: 10000,
+  });
+  const laDelEquipo = (estaciones.data?.estaciones ?? []).find((e) => e.mac === equipo);
+  useEffect(() => {
+    const suyo = laDelEquipo?.correria || laDelEquipo?.sku;
+    if (suyo) setSku(suyo);
+  }, [laDelEquipo?.correria, laDelEquipo?.sku]);
   const [testSel, setTestSel] = useState<number | null>(null);
   const [clasif, setClasif]   = useState<Clasificacion2[] | null>(null);
   const [midiendo, setMidiendo] = useState(false);
@@ -116,6 +128,15 @@ export default function DiagnosticoTab({ skuActivo }: { skuActivo: string }) {
             Qué falla, dónde, y de qué tipo. Un abierto y un corto a masa se ven
             igual en el mapa y se arreglan distinto.
           </p>
+          {laDelEquipo && (
+            <p className="text-sm text-slate-600 mt-1">
+              Sobre el equipo <b>{laDelEquipo.unit}</b>
+              {laDelEquipo.notes ? ` — ${laDelEquipo.notes}` : ""}
+              {laDelEquipo.correria
+                ? <> · lleva <b>{laDelEquipo.correria}</b></>
+                : <span className="text-amber-700"> · {laDelEquipo.motivo}</span>}
+            </p>
+          )}
         </div>
         <Button variant={avanzado ? "default" : "outline"} onClick={() => setAvanzado(!avanzado)}>
           <Waves className="w-4 h-4 mr-2" />

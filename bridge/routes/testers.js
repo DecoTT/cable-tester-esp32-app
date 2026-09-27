@@ -6,6 +6,26 @@
 
 import { db, now, audit } from "../db.js";
 
+/**
+ * CRC-16/CCITT-FALSE sobre los net_of del golden. Misma cuenta que el firmware
+ * (`_crc16` en mapping.cpp: init 0xFFFF, polinomio 0x1021, sin reflejar).
+ *
+ * Se calcula AQUI en vez de fiarse del que devuelve el equipo. Comparar su
+ * respuesta consigo misma no comprueba nada: si grabara mal la mitad de los
+ * bytes, devolveria el CRC de lo que grabo y todo pareceria correcto. Con el
+ * calculo propio, un golden que llegue mutilado SE VE.
+ */
+function crc16(bytes) {
+  let crc = 0xFFFF;
+  for (const b of bytes) {
+    crc ^= (b & 0xFF) << 8;
+    for (let i = 0; i < 8; i++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+    }
+  }
+  return crc;
+}
+
 // Pines del modulo ESP32 para el switch fisico (disparador).
 //
 // La lista sale del firmware (config.h + la validacion del comando `trigger`),
@@ -151,11 +171,19 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
   });
 
   // Golden cargado en el tester
+  // Qué job lleva el equipo en su NVS.
+  //
+  // No exige "conectar" primero: se resuelve la IP por mDNS igual que el
+  // disparador. Obligar a conectar para LEER algo era una ceremonia que no
+  // protegía de nada.
   app.get("/api/testers/:mac/golden", async (req, res) => {
-    const c = state.clients.get(req.params.mac);
-    if (!c) return res.json({ ok: false, error: "no conectado" });
-    try { res.json({ ok: true, golden: await c.getGolden() }); }
-    catch (e) { res.json({ ok: false, error: e.message }); }
+    let cli = null;
+    try {
+      cli = clienteDe(req.params.mac);
+      res.json({ ok: true, golden: await cli.c.getGolden() });
+    } catch (e) {
+      res.json({ ok: false, error: String(e.message ?? e) });
+    } finally { if (cli?.efimero) cli.c.close(); }
   });
 
   // ── Pasos del asistente de alta de SKU ──────────────────────
@@ -209,21 +237,102 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
   });
 
   // Empujar un job aprobado al tester
+  /**
+   * Monta un job EN el equipo: el golden se graba en su NVS.
+   *
+   * Es lo que hace posible el modo autónomo. Con el golden dentro, el equipo
+   * puede juzgar una pieza sin PC — enciende, lee su golden y al pulsar el
+   * botón mide y canta el veredicto en los LEDs.
+   *
+   * `autonomo: true` además deja el disparador en modo local, que es el que
+   * hace que el botón pruebe por su cuenta en vez de avisar a la PC. Los dos
+   * pasos van juntos porque por separado se olvida el segundo, y entonces el
+   * equipo tiene golden pero el botón no hace nada sin PC.
+   *
+   * SE VERIFICA EL CRC: el firmware devuelve el de lo que quedó grabado y se
+   * compara con el de la base. Si no cuadra, lo que hay en el equipo NO es el
+   * golden que se creía haber mandado, y juzgar piezas con eso es peor que no
+   * tener nada.
+   */
   app.post("/api/testers/:mac/push-job", async (req, res) => {
-    const { job_id, actor = "sistema" } = req.body || {};
-    const c = state.clients.get(req.params.mac);
-    if (!c) return res.json({ ok: false, error: "no conectado" });
+    const { job_id, actor = "sistema", autonomo = false } = req.body || {};
     const job = db.prepare("SELECT * FROM jobs WHERE id = ?").get(job_id);
-    if (!job) return res.json({ ok: false, error: "job no existe" });
-    if (job.status !== "approved") return res.json({ ok: false, error: `job en estado '${job.status}', debe estar aprobado` });
+    if (!job) return res.json({ ok: false, error: "ese job no existe" });
+    if (job.status !== "approved") {
+      return res.json({ ok: false, error: `el job está en estado '${job.status}', debe estar aprobado` });
+    }
+    const hosts = JSON.parse(job.hosts || "[]");
+    if (hosts.length > 1) {
+      return res.json({
+        ok: false,
+        error: `${job.sku} usa ${hosts.length} equipos y el modo autónomo mide con uno solo. ` +
+               "Para ese arnés hace falta la PC.",
+      });
+    }
+
+    let cli = null;
     try {
-      const r = await c.setGolden({
+      cli = clienteDe(req.params.mac);
+      const r = await cli.c.setGolden({
         sku: job.sku, job: job.nombre,
         meta: `job:${job.id};aprobado:${job.approved_by};${job.approved_at}`,
         nets: Array.from(job.nets),
       });
-      audit(actor, "tester.push_job", "tester", req.params.mac, { job_id: job.id, sku: job.sku, crc_tester: r.crc, crc_db: job.crc });
-      res.json({ ok: true, result: r, crc_match: Number(r.crc) === Number(job.crc) });
-    } catch (e) { res.json({ ok: false, error: e.message }); }
+      // El CRC de referencia se calcula sobre lo que SE MANDO, no se lee de la
+      // base: jobs.crc lo dejaba en 0 la ruta de la PC, que nunca necesito el
+      // CRC del firmware. Comparar contra 0 fallaba siempre.
+      const esperado = crc16(Array.from(job.nets));
+      const crcOk = Number(r.crc) === esperado;
+
+      // Se guarda para poder comparar sin recalcular, y para que se vea en la
+      // base que este job ya se monto en un equipo.
+      if (crcOk && Number(job.crc) !== esperado) {
+        db.prepare("UPDATE jobs SET crc = ? WHERE id = ?").run(esperado, job.id);
+      }
+
+      let disparador = null;
+      if (autonomo && crcOk) {
+        const st = await cli.c.status();
+        const pin = st.trigger?.pin ?? -1;
+        if (pin < 0) {
+          return res.json({
+            ok: false, crc_match: crcOk,
+            error: "el golden se grabó, pero este equipo no tiene botón configurado. " +
+                   "Ponle uno antes de dejarlo autónomo.",
+          });
+        }
+        disparador = await cli.c.setTrigger(pin, st.trigger.active_low, "local");
+      }
+
+      audit(actor, autonomo ? "tester.autonomo" : "tester.push_job", "tester", req.params.mac,
+            `${job.sku} job:${job.id} crc ${crcOk ? "OK " + esperado : `NO CUADRA (equipo ${r.crc}, esperado ${esperado})`}` +
+            (disparador ? ` · disparador IO${disparador.pin} local` : ""));
+
+      res.json({
+        ok: crcOk, result: r, crc_match: crcOk, disparador,
+        crc_equipo: Number(r.crc), crc_esperado: esperado,
+        error: crcOk ? null
+          : `el golden llegó mutilado: el equipo tiene el CRC ${r.crc} y debería ser ${esperado}. Vuelve a mandarlo.`,
+      });
+    } catch (e) {
+      res.json({ ok: false, error: String(e.message ?? e) });
+    } finally { if (cli?.efimero) cli.c.close(); }
+  });
+
+  // Volver a modo normal: el equipo avisa y mide la PC.
+  app.post("/api/testers/:mac/asistido", async (req, res) => {
+    const { actor = "sistema" } = req.body || {};
+    let cli = null;
+    try {
+      cli = clienteDe(req.params.mac);
+      const st = await cli.c.status();
+      const pin = st.trigger?.pin ?? -1;
+      if (pin < 0) return res.json({ ok: false, error: "este equipo no tiene botón configurado" });
+      const t = await cli.c.setTrigger(pin, st.trigger.active_low, "avisar");
+      audit(actor, "tester.asistido", "tester", req.params.mac, `disparador IO${t.pin} avisar`);
+      res.json({ ok: true, disparador: t });
+    } catch (e) {
+      res.json({ ok: false, error: String(e.message ?? e) });
+    } finally { if (cli?.efimero) cli.c.close(); }
   });
 }

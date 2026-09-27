@@ -36,6 +36,10 @@ function Shell() {
   // siga en el producto que se esta corriendo.
   const [sku, setSku] = useState<string>(() => localStorage.getItem("ct32.sku") || "");
 
+  // Equipo activo (MAC). Es la otra puerta de entrada: por producto o por
+  // equipo. Se recuerda porque en un puesto siempre es el mismo.
+  const [equipo, setEquipo] = useState<string>(() => localStorage.getItem("ct32.equipo") || "");
+
   useEffect(() => {
     const ping = () => api.health().then(() => setBridgeOk(true)).catch(() => setBridgeOk(false));
     ping();
@@ -45,6 +49,7 @@ function Shell() {
 
   useEffect(() => { localStorage.setItem("ct32.operator", operator); }, [operator]);
   useEffect(() => { localStorage.setItem("ct32.sku", sku); }, [sku]);
+  useEffect(() => { localStorage.setItem("ct32.equipo", equipo); }, [equipo]);
 
   // El bridge tambien necesita saber que producto y que operador estan puestos.
   //
@@ -60,7 +65,7 @@ function Shell() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <AppHeader bridgeOk={bridgeOk} operator={operator} />
+        <AppHeader bridgeOk={bridgeOk} operator={operator} equipo={equipo} setEquipo={setEquipo} />
 
         <div className="bg-white rounded-lg shadow-lg">
           <NavigationTabs activeTab={tab} setActiveTab={setTab} />
@@ -69,7 +74,7 @@ function Shell() {
             {tab === "resultados"    && <ResultadosTab />}
             {tab === "skus"          && <SkusTab operator={operator} />}
             {tab === "socket"        && <SocketTab sku={sku} setSku={setSku} />}
-            {tab === "diagnostico"   && <DiagnosticoTab skuActivo={sku} />}
+            {tab === "diagnostico"   && <DiagnosticoTab skuActivo={sku} equipo={equipo} />}
             {tab === "etiquetas"     && <EtiquetasTab operator={operator} />}
             {tab === "logs"          && <LogsTab />}
             {tab === "operador"      && <OperadorTab operator={operator} setOperator={setOperator} />}
