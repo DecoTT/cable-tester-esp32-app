@@ -1,6 +1,0 @@
-
-{
-  "ignore": ["logs/*", "*.log", "*.json"],
-  "ext": "js,mjs,cjs",
-  "watch": ["*.js", "!logs/**"]
-}

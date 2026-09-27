@@ -1,0 +1,9 @@
+# Los .bat se sirven a Windows y se ejecutan con cmd.exe: siempre CRLF, venga
+# el clon de donde venga.
+*.bat text eol=crlf
+
+# Binarios: que git no intente normalizar saltos de linea dentro.
+*.png binary
+*.ico binary
+*.pdf binary
+*.bin binary

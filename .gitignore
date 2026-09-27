@@ -1,24 +1,27 @@
-# Logs
-logs
+node_modules/
+dist/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Datos locales de la estacion: DB, PDFs de etiquetas, respaldos.
+# Cada PC de produccion tiene los suyos; nunca van al repo.
+data/*.db
+data/*.db-*
+data/labels/*.pdf
+data/backups/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Goldens y mapas de socket: son del CLIENTE y de SU fixture, no del producto.
+# Viajan en la exportacion (Configuracion -> Datos de la estacion), nunca aqui.
+data/goldens/
+data/fixtures/
+
+# Exportaciones de estacion: llevan SKUs, produccion y operadores.
+*.ct32.json
+
+.env
+.env.local
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
+
+# Copia local de Node que instala setup.bat cuando el equipo no tiene una
+# valida. Es un runtime descargado, no codigo del proyecto.
+.node/

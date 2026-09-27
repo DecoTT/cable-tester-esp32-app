@@ -1,58 +1,36 @@
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FlaskConical, BarChart3, Package, Stethoscope, Tags, FileText, Cable } from "lucide-react";
 
-import React from 'react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  FlaskConical, 
-  BarChart3, 
-  Package, 
-  AlertTriangle, 
-  Tags, 
-  FileText
-} from 'lucide-react';
+// Mismas 6 pestañas principales que la app vieja, en el mismo orden.
+// "Códigos" pasa a "Diagnóstico": las fallas ahora vienen estructuradas del
+// tester y se muestran en terminos del conector, no como codigos opacos.
+export type TabId =
+  | "pruebas" | "resultados" | "skus" | "socket" | "diagnostico" | "etiquetas" | "logs"
+  | "operador" | "configuracion";
 
-interface NavigationTabsProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-}
+const MAIN: { id: TabId; label: string; Icon: typeof FlaskConical }[] = [
+  { id: "pruebas",     label: "Pruebas",     Icon: FlaskConical },
+  { id: "resultados",  label: "Resultados",  Icon: BarChart3 },
+  { id: "skus",        label: "SKUs",        Icon: Package },
+  { id: "socket",      label: "Socket",      Icon: Cable },
+  { id: "diagnostico", label: "Diagnóstico", Icon: Stethoscope },
+  { id: "etiquetas",   label: "Etiquetas",   Icon: Tags },
+  { id: "logs",        label: "Logs",        Icon: FileText },
+];
 
-const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setActiveTab }) => {
+export default function NavigationTabs({ activeTab, setActiveTab }: { activeTab: TabId; setActiveTab: (t: TabId) => void }) {
   return (
     <div className="border-b">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-6 h-auto p-2">
-          <TabsTrigger value="testing" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <FlaskConical className="w-5 h-5" />
-            <span className="text-sm font-medium">Pruebas</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="results" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <BarChart3 className="w-5 h-5" />
-            <span className="text-sm font-medium">Resultados</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="skus" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <Package className="w-5 h-5" />
-            <span className="text-sm font-medium">SKUs</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="codigos" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <AlertTriangle className="w-5 h-5" />
-            <span className="text-sm font-medium">Códigos</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="labels" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <Tags className="w-5 h-5" />
-            <span className="text-sm font-medium">Etiquetas</span>
-          </TabsTrigger>
-          
-          <TabsTrigger value="logs" className="flex flex-col items-center space-y-2 p-4 h-auto">
-            <FileText className="w-5 h-5" />
-            <span className="text-sm font-medium">Logs</span>
-          </TabsTrigger>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)} className="w-full">
+        <TabsList className="grid w-full grid-cols-7 h-auto p-2">
+          {MAIN.map(({ id, label, Icon }) => (
+            <TabsTrigger key={id} value={id} className="flex flex-col items-center space-y-2 p-4 h-auto">
+              <Icon className="w-5 h-5" />
+              <span className="text-sm font-medium">{label}</span>
+            </TabsTrigger>
+          ))}
         </TabsList>
       </Tabs>
     </div>
   );
-};
-
-export default NavigationTabs;
+}

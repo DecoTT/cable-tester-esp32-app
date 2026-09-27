@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Cable Tester 32CH">
+  <!--
+    Logo del Cable Tester 32CH.
+
+    Es lo que hace la máquina: dos conectores unidos por un arnés, y el verde
+    del extremo que ya pasó. Sin engranajes ni rayos genéricos.
+
+    DISEÑADO PARA 16 px, que es donde de verdad se ve. Comprobado rasterizando
+    a 16, 24 y 32 px, no mirándolo en grande:
+      · cuatro formas y ninguna más — un fondo, un cable, dos conectores;
+      · trazo de 9 pt: a 16 px eso son ~2 px, el mínimo que no desaparece;
+      · el verde al lado del blanco, que es el contraste que sobrevive.
+
+    La primera versión llevaba una palomita dentro de cada conector. A tamaño
+    grande se entendía; a 16 px se leía como dos casillas de verificación y a
+    24 px era papilla. Por eso no está.
+  -->
+  <rect width="64" height="64" rx="14" fill="#0F172A"/>
+
+  <!-- El arnés -->
+  <path d="M42 18 C 14 24, 14 40, 42 46"
+        fill="none" stroke="#38BDF8" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Los dos conectores; el verde es el extremo comprobado -->
+  <rect x="38" y="9"  width="20" height="18" rx="5" fill="#E2E8F0"/>
+  <rect x="38" y="37" width="20" height="18" rx="5" fill="#22C55E"/>
+</svg>
