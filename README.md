@@ -1,6 +1,6 @@
 # Cable Tester 32CH (ESP32) — App de producción
 
-App local para validar arneses con el tester ESP32 (firmware v0.6+), registrar
+App local para validar arneses con el tester ESP32 (firmware 1.7.0+), registrar
 trazabilidad e imprimir etiquetas.
 
 > **Viene de [`cable-test-scribe`](https://github.com/DecoTT/cable-test-scribe)**, la
