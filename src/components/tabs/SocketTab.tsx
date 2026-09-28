@@ -83,6 +83,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   const [fixtureId, setFixtureId] = useState("");
   const [fixtures, setFixtures] = useState<FixtureInfo[]>([]);
   const [total, setTotal] = useState(0);
+  const [descartes, setDescartes] = useState<{ canal: string; mv: number; t: number }[]>([]);
   // Un socket puede servir a varios SKU, asi que el nombre se puede editar: el
   // sugerido es por SKU, pero si dos productos comparten fixture se le pone el
   // mismo nombre a proposito y los dos goldens apuntan ahi.
@@ -134,6 +135,12 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
           pito.ok();
           setPines((p) => [...p, { pin: ev.pin, canal: ev.canal, conector: ev.conector }]);
           setTotal((t) => t + 1);
+          break;
+        // No es un fallo: es el filtro haciendo su trabajo. Se enseña para que
+        // el operador sepa que la app SI esta viendo algo, y que lo descarta
+        // por buenas razones — si no, parece que no responde.
+        case "descartado":
+          setDescartes((d) => [{ canal: ev.canal, mv: ev.mv, t: Date.now() }, ...d].slice(0, 5));
           break;
         case "deshecho":
           setPines((p) => p.slice(0, -1));
@@ -286,9 +293,12 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {equipos.length
-                  ? <>{equipos.length * 32} canales. El orden define los nombres
-                      (<span className="font-mono">M</span>, <span className="font-mono">L1</span>…):
-                      recorrer el socket con otro orden daría nombres que no significan lo mismo.</>
+                  ? <>{equipos.length * 32} canales. <strong>Todas escuchan a la vez</strong>:
+                      no hay una que mande y otras que acompañen. Las etiquetas
+                      (<span className="font-mono">M</span>, <span className="font-mono">L1</span>,
+                      <span className="font-mono"> L2</span>) son la <strong>posición</strong>, no
+                      una jerarquía — pero define los nombres de canal, así que con otro orden los
+                      nombres no significan lo mismo.</>
                   : <>Elige sobre qué unidades se escucha. Si el SKU ya tiene golden, se
                       proponen las suyas.</>}
               </p>
@@ -313,6 +323,17 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                 <Undo2 className="w-4 h-4 mr-2" />Deshacer
               </Button>
             </div>
+
+            {descartes.length > 0 && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                <span className="font-medium">Descartados por acoplamiento:</span>{" "}
+                {descartes.map((d) => `${d.canal} (${d.mv} mV)`).join(", ")}
+                <div className="text-amber-700 mt-0.5">
+                  Se pusieron altos pero a media tensión: es el vecino, no la punta. Un pin
+                  tocado marca ~3300 mV.
+                </div>
+              </div>
+            )}
 
             {enCurso && (
               <div className="rounded-lg border p-4">

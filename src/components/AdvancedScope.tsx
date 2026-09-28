@@ -206,11 +206,11 @@ export default function AdvancedScope({ sku }: { sku: string }) {
         {porEquipos && (
           <div className="space-y-2">
             <p className="text-xs text-gray-600">
-              Elige los equipos <strong>en el orden del montaje</strong>: el primero es
-              <span className="font-mono"> M</span>, el siguiente
-              <span className="font-mono"> L1</span>, y así. El orden define los nombres de
-              canal, igual que en un golden — con otro orden los nombres no significan lo
-              mismo.
+              Elige los equipos <strong>en el orden del montaje</strong>. Las etiquetas
+              <span className="font-mono"> M</span>, <span className="font-mono">L1</span>,
+              <span className="font-mono">L2</span> son la <strong>posición</strong>, no una
+              jerarquía: todas miden igual. Pero definen los nombres de canal, igual que en un
+              golden, así que con otro orden los nombres no significan lo mismo.
             </p>
             <div className="flex flex-wrap gap-2">
               {(enRed.data ?? []).map((d) => {

@@ -129,6 +129,9 @@ export type EventoSocket =
   | { tipo: "detectado"; conector: string | null; pin: number; canal: string; g: number; llevan: number; esperados: number }
   | { tipo: "deshecho"; pin: number; canal: string; llevan: number }
   | { tipo: "conector_fin"; conector: string; detectados: number; esperados: number; ok: boolean; faltan: number }
+  // Un canal se puso alto pero a media tension: es acoplamiento del vecino, no
+  // la punta. Se avisa para que no parezca que la app no ve nada.
+  | { tipo: "descartado"; canal: string; mv: number; mensaje: string }
   | { tipo: "error"; mensaje: string };
 
 export const api = {

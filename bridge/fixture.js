@@ -32,6 +32,15 @@ import { chName, totalCanales, locate } from "./measure.js";
 
 const FIX_DIR = path.join(DATA_DIR, "fixtures");
 
+/**
+ * Tension minima para dar un pin por tocado.
+ *
+ * Un pin con la punta de 3,3 V encima lee ~3300 mV. Un canal al aire acoplado
+ * al de al lado lee alto pero MENOS: 2417 y 2391 mV en la medida de
+ * acoplamiento. 2900 deja margen a los dos lados.
+ */
+const MIN_MV_PUNTA = 2900;
+
 function asegurarDir() {
   if (!fs.existsSync(FIX_DIR)) fs.mkdirSync(FIX_DIR, { recursive: true });
 }
@@ -117,12 +126,15 @@ export class SesionSocket {
     this.vistos = new Set();   // canales ya asignados, para no repetir
     this.corriendo = false;
     this._t = null;
+
+    this._candidatos = new Map();   // canal -> veces visto alto seguidas
   }
 
   empezarConector(nombre, esperados) {
     this.conector = nombre;
     this.esperados = Number(esperados) || 0;
     this.detectados = [];
+    this._candidatos.clear();
     this.emit({ tipo: "conector", conector: nombre, esperados: this.esperados });
   }
 
@@ -153,16 +165,52 @@ export class SesionSocket {
   async _tick() {
     if (!this.corriendo) return;
     try {
+      // TODAS las unidades escuchan, siempre. No hay una que mande y otras que
+      // acompañen: en el recorrido de socket la punta puede tocar un pin de
+      // cualquiera de ellas, y el orden solo sirve para nombrar los canales.
+      const altos = new Set();
       for (const u of this.units) {
         const m = await u.escuchar();
         if (m === null) continue;
         for (let b = 0; b < u.n; b++) {
-          if (!((m >>> b) & 1)) continue;
+          if ((m >>> b) & 1) altos.add(chName(u.base + b, this.units));
+        }
+      }
+
+      // Los que dejaron de estar altos pierden la racha.
+      for (const c of [...this._candidatos.keys()]) {
+        if (!altos.has(c)) this._candidatos.delete(c);
+      }
+
+      for (const u of this.units) {
+        for (let b = 0; b < u.n; b++) {
           const g = u.base + b;
           const interno = chName(g, this.units);
+          if (!altos.has(interno)) continue;
           if (this.vistos.has(interno)) continue;   // ya anotado
 
+          // CONFIRMACION POR TENSION — el filtro que de verdad distingue.
+          //
+          // La doble muestra no basta con la punta SOSTENIDA: un vecino
+          // acoplado se carga y se lee alto en las dos. Pero se lee alto a
+          // MEDIAS. Medido con el barrido de acoplamiento (CARACTERIZACION
+          // §12): con un canal excitado, el conectado de verdad marco 3300 mV
+          // y dos que no tocaban nada, 2417 y 2391 mV.
+          //
+          // Un pin con la punta encima esta a 3,3 V; un fantasma se queda por
+          // debajo. Cuesta una lectura de ADC por candidato, y solo se paga
+          // cuando hay candidato.
+          const mv = Math.round((await u.volts(b)) * 1000);
+          if (mv < MIN_MV_PUNTA) {
+            this.emit({
+              tipo: "descartado", canal: interno, mv,
+              mensaje: `${interno} a ${mv} mV: acoplamiento, no la punta.`,
+            });
+            continue;
+          }
+
           this.vistos.add(interno);
+          this._candidatos.delete(interno);
           const pin = this.detectados.length + 1;
           this.detectados.push({ pin, canal: interno, g });
           if (this.conector) {
@@ -180,7 +228,10 @@ export class SesionSocket {
     } catch (e) {
       this.emit({ tipo: "error", mensaje: String(e.message ?? e) });
     }
-    if (this.corriendo) this._t = setTimeout(() => this._tick(), 120);
+    // 60 ms y no 120: cada sondeo ya cuesta mas (doble muestra, y una lectura
+    // de ADC cuando hay candidato). Lo que importa es que tocar un pin se note
+    // al instante.
+    if (this.corriendo) this._t = setTimeout(() => this._tick(), 60);
   }
 
   arrancar() {
@@ -203,6 +254,8 @@ export class SesionSocket {
     const ult = this.detectados.pop();
     if (!ult) return null;
     this.vistos.delete(ult.canal);
+    // Y que no se vuelva a anotar solo por la racha que traia.
+    this._candidatos.delete(ult.canal);
     delete this.mapa[ult.canal];
     this.emit({ tipo: "deshecho", ...ult, llevan: this.detectados.length });
     return ult;

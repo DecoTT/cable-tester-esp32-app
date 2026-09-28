@@ -100,9 +100,25 @@ export class Unit {
   }
 
   /** Lee una sola vez, sin excitar. Para el aprendizaje de socket. */
+  /**
+   * Escucha qué canal está alto — la punta de 3,3 V del recorrido de socket.
+   *
+   * DOBLE MUESTRA, igual que el barrido. Antes era una sola, y esa es la
+   * condición más favorable que existe para el fantasma del acoplamiento: TODOS
+   * los canales al aire y 3,3 V aplicados a uno.
+   *
+   * MEDIDO en planta (2026-09-28): tocando un pin se encendían hasta 6 canales
+   * a la vez. Y como un canal detectado queda marcado como visto, los fantasmas
+   * se comían pines de OTROS conectores: CN12 anotó 18 de 8, CN14 14 de 10, y
+   * CN11 se quedó en 0 de 8 porque sus canales ya estaban "vistos".
+   *
+   * Un pin con tensión de verdad sigue al excitador en las dos muestras; uno al
+   * aire se mueve por acoplamiento y no repite.
+   */
   async escuchar() {
-    const r = await this.raw(["sample 0 1"]);
-    return r[0] === null ? null : r[0] >>> 0;
+    const r = await this.raw(["sample 0 1", "sample 0 1"]);
+    if (r[0] === null || r[1] === null) return null;
+    return ((r[0] >>> 0) & (r[1] >>> 0)) >>> 0;
   }
 
   /** Excita un canal y lo MANTIENE mientras las demas muestrean. */
