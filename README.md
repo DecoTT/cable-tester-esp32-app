@@ -253,6 +253,17 @@ en la traza aunque una prueba suelta lo apruebe.
 La vista de **acoplamiento** enseña por qué el barrido exige dos muestras que
 coincidan: con `M.J00` excitado, dos canales que no tocan nada marcan 2,4 V.
 
+### El socket también necesita saber sobre qué escucha
+
+La pestaña **Socket** mide sobre las unidades abiertas en el bridge, y hasta
+ahora nadie las abría desde ahí: solo quedaban abiertas si antes habías pasado
+por el asistente de SKU **en la misma sesión**. Entrar directo daba
+*"no hay unidades. POST /api/medida/unidades primero"* — un mensaje que no le
+dice nada a quien está en planta con la punta en la mano.
+
+Ahora los equipos se eligen en la propia pestaña, en el orden del montaje, y se
+abren al pulsar **Escuchar**. Si el SKU ya tiene golden, se proponen los suyos.
+
 ### Sin producto: equipos sueltos
 
 **No hace falta SKU.** Exigirlo dejaba sin herramientas justo cuando más falta

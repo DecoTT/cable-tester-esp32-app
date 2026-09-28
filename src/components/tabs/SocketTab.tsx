@@ -88,6 +88,35 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   // mismo nombre a proposito y los dos goldens apuntan ahi.
   const [nombreTocado, setNombreTocado] = useState(false);
 
+  // ── Sobre qué equipos se escucha ─────────────────────────────────────
+  //
+  // El motor de socket mide sobre las unidades ABIERTAS en el bridge, y hasta
+  // ahora nadie las abría desde aquí: solo quedaban abiertas si antes habías
+  // pasado por el asistente de SKU en la misma sesión. Entrar directo a Socket
+  // daba "no hay unidades. POST /api/medida/unidades primero", que además no
+  // le dice nada a quien está en planta con la punta en la mano.
+  //
+  // Se eligen aquí, EN ORDEN — el primero es M, luego L1, L2 — porque un
+  // socket se recorre igual antes de que exista el SKU.
+  const [equipos, setEquipos] = useState<string[]>([]);
+  const enRed = useQuery({ queryKey: ["discovered"], queryFn: api.testers.discovered, refetchInterval: 8000 });
+  const jobs  = useQuery({ queryKey: ["jobs"], queryFn: () => api.medida.jobs().then((d) => d.jobs) });
+
+  // Si el SKU elegido ya tiene golden, se proponen SUS unidades y su orden:
+  // recorrer el socket con otro orden daría nombres que no significan lo mismo.
+  useEffect(() => {
+    if (!sku || equipos.length) return;
+    const j = (jobs.data ?? []).find((x: any) => x.sku === sku && x.status === "approved");
+    if (!j) return;
+    try {
+      const hosts = JSON.parse(j.hosts || "[]");
+      if (hosts.length) setEquipos(hosts);
+    } catch { /* job sin hosts: se eligen a mano */ }
+  }, [sku, jobs.data]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  const alternar = (ip: string) =>
+    setEquipos((x) => x.includes(ip) ? x.filter((y) => y !== ip) : [...x, ip]);
+
   useEffect(() => { api.fixtures.list().then((d) => setFixtures(d.fixtures)).catch(() => {}); }, []);
 
   useEffect(() => {
@@ -129,8 +158,21 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   }, [pito, toast]);
 
   const arrancar = async () => {
-    try { await api.socket.arrancar(); }
-    catch (e: any) { toast({ variant: "destructive", title: "No se pudo arrancar", description: e.message }); }
+    if (!equipos.length) {
+      return toast({
+        variant: "destructive",
+        title: "Elige los equipos",
+        description: "Hay que decir sobre qué unidades se escucha, y en qué orden.",
+      });
+    }
+    try {
+      // Abrir las unidades ANTES de escuchar. Es lo que faltaba: sin esto el
+      // bridge no tiene sobre qué medir y rechaza la sesión.
+      await api.medida.setUnidades(equipos);
+      await api.socket.arrancar();
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "No se pudo arrancar", description: e.message });
+    }
   };
   const parar = async () => { try { await api.socket.parar(); } catch { /* ya parada */ } };
 
@@ -221,6 +263,35 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                   Sin SKU, el mapa que recorras no se puede enlazar a ningún golden.
                 </p>
               )}
+            </div>
+
+            <div>
+              <Label>Equipos, en el orden del montaje</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {(enRed.data ?? []).map((d) => {
+                  const i = equipos.indexOf(d.ip || "");
+                  return (
+                    <button key={d.unit} type="button" disabled={corriendo}
+                            onClick={() => d.ip && alternar(d.ip)}
+                            className={`px-3 py-1.5 rounded border text-sm disabled:opacity-50 ${
+                              i >= 0 ? "bg-slate-900 text-white border-slate-900" : "hover:bg-slate-100"}`}>
+                      {i >= 0 && <span className="font-mono mr-1">{i === 0 ? "M" : `L${i}`}</span>}
+                      {d.unit}
+                    </button>
+                  );
+                })}
+                {!(enRed.data ?? []).length && (
+                  <span className="text-sm text-gray-500">Ningún equipo en la red.</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {equipos.length
+                  ? <>{equipos.length * 32} canales. El orden define los nombres
+                      (<span className="font-mono">M</span>, <span className="font-mono">L1</span>…):
+                      recorrer el socket con otro orden daría nombres que no significan lo mismo.</>
+                  : <>Elige sobre qué unidades se escucha. Si el SKU ya tiene golden, se
+                      proponen las suyas.</>}
+              </p>
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
