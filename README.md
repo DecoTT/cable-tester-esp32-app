@@ -253,6 +253,25 @@ en la traza aunque una prueba suelta lo apruebe.
 La vista de **acoplamiento** enseña por qué el barrido exige dos muestras que
 coincidan: con `M.J00` excitado, dos canales que no tocan nada marcan 2,4 V.
 
+### Sin producto: equipos sueltos
+
+**No hace falta SKU.** Exigirlo dejaba sin herramientas justo cuando más falta
+hacen —módulos recién montados, un socket recién cableado, un arnés a medio
+rutear—, porque ahí todavía no hay golden: el golden es el final del camino, no
+el principio.
+
+Eligiendo los equipos **en el orden del montaje** (el primero es `M`, luego
+`L1`, `L2`…) se puede:
+
+| | |
+|---|---|
+| **Validar módulos** | Con el arnés **fuera**: lo que salga mal es de la placa |
+| **Ver qué hay conectado** | Barrido libre: las conexiones y los canales libres, sin veredicto |
+| **Medir las líneas que encuentre** | El osciloscopio sobre lo que haya, sin golden |
+
+Medido sobre el arnés grande (2898 + 700C + 424C, 96 canales): barrido en ~25 s
+con **45 conexiones y 6 canales libres**, y las 45 líneas medidas en 35 s.
+
 **Logs** saca de la base lo que antes solo se veía abriendo SQLite: auditoría
 (quién aprobó qué golden, quién cambió qué ajuste), pruebas y etiquetas, por
 rango de fechas, con CSV y JSON **de lo que hay en pantalla** — si exportara

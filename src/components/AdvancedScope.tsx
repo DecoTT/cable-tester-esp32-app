@@ -8,7 +8,8 @@ import { Activity, Waves, Info } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from "recharts";
-import { api, type LineaOnda, type Muestra } from "@/services/api";
+import { useQuery } from "@tanstack/react-query";
+import { api, type LineaOnda, type Muestra, type Destino } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 
 // Osciloscopio lento.
@@ -86,11 +87,66 @@ export default function AdvancedScope({ sku }: { sku: string }) {
   const [acopl, setAcopl] = useState<{ excitado: string; lineas: { canal: string; mv: number }[] } | null>(null);
   const [canalAc, setCanalAc] = useState("");
 
+  // ── Las dos puertas: producto, o equipos sueltos ─────────────────────
+  //
+  // Exigir SKU dejaba sin herramientas justo cuando más falta hacen: módulos
+  // recién montados, un socket recién cableado, un arnés a medio rutear. Ahí
+  // todavía NO hay golden — el golden es el final del camino, no el principio.
+  const [porEquipos, setPorEquipos] = useState(false);
+  const [elegidos, setElegidos] = useState<string[]>([]);
+  const [barrido, setBarrido] = useState<any>(null);
+  const [modulos, setModulos] = useState<any>(null);
+
+  const enRed = useQuery({ queryKey: ["discovered"], queryFn: api.testers.discovered, refetchInterval: 8000 });
+
+  const destino: Destino | null = porEquipos
+    ? (elegidos.length ? { hosts: elegidos } : null)
+    : (sku ? { sku } : null);
+
+  const nombreDestino = porEquipos
+    ? elegidos.map((ip, i) => `${i === 0 ? "M" : "L" + i}:${(enRed.data ?? []).find((d) => d.ip === ip)?.unit ?? ip}`).join(" + ")
+    : sku;
+
+  // El ORDEN manda: define los nombres de canal (M, L1, L2) igual que en un
+  // golden. Se añade al final y se quita de donde esté.
+  const alternar = (ip: string) =>
+    setElegidos((x) => x.includes(ip) ? x.filter((y) => y !== ip) : [...x, ip]);
+
+  const correrBarrido = async () => {
+    if (!destino) return;
+    setMidiendo(true); setBarrido(null); setModulos(null); setLineas(null);
+    try {
+      const r = await api.avanzado.barrido(destino);
+      if (!r.ok) return toast({ title: "No se pudo barrer", description: r.error, variant: "destructive" });
+      setBarrido(r);
+    } catch (e: any) {
+      toast({ title: "Error de medida", description: e.message, variant: "destructive" });
+    } finally { setMidiendo(false); }
+  };
+
+  const correrModulos = async () => {
+    if (!destino) return;
+    setMidiendo(true); setModulos(null);
+    try {
+      const r = await api.avanzado.modulos(destino);
+      setModulos(r);
+      toast({
+        title: r.ok ? `${r.total} canales sanos` : `${r.malos.length} canal(es) pegados a masa`,
+        description: r.ok
+          ? "Las placas están bien. Si una línea falla con el arnés puesto, es del arnés."
+          : "Con el arnés fuera, esto es de la placa. Ver la lista.",
+        variant: r.ok ? undefined : "destructive",
+      });
+    } catch (e: any) {
+      toast({ title: "Error de medida", description: e.message, variant: "destructive" });
+    } finally { setMidiendo(false); }
+  };
+
   const medir = async () => {
-    if (!sku) return toast({ title: "Elige un producto arriba", variant: "destructive" });
+    if (!destino) return toast({ title: "Elige un producto o los equipos", variant: "destructive" });
     setMidiendo(true); setLineas(null); setDetalle(null); setAcopl(null);
     try {
-      const r = await api.avanzado.lineas(sku);
+      const r = await api.avanzado.lineas(destino);
       if (!r.ok) return toast({ title: "No se pudo medir", description: r.error, variant: "destructive" });
       setLineas(r.lineas);
       if (r.lineas[0]) setCanalAc(r.lineas[0].a);
@@ -100,19 +156,20 @@ export default function AdvancedScope({ sku }: { sku: string }) {
   };
 
   const verDetalle = async (l: LineaOnda) => {
+    if (!destino) return;
     setMidiendo(true);
     try {
-      const r = await api.avanzado.onda(sku, l.a, l.b, 4);
+      const r = await api.avanzado.onda(destino!, l.a, l.b, 4);
       if (!r.ok) return toast({ title: "Error", description: r.error, variant: "destructive" });
       setDetalle(r);
     } finally { setMidiendo(false); }
   };
 
   const verAcoplamiento = async () => {
-    if (!canalAc) return;
+    if (!canalAc || !destino) return;
     setMidiendo(true);
     try {
-      const r = await api.avanzado.acoplamiento(sku, canalAc);
+      const r = await api.avanzado.acoplamiento(destino!, canalAc);
       if (!r.ok) return toast({ title: "Error", description: r.error, variant: "destructive" });
       setAcopl(r);
     } finally { setMidiendo(false); }
@@ -133,10 +190,63 @@ export default function AdvancedScope({ sku }: { sku: string }) {
         </AlertDescription>
       </Alert>
 
+      {/* ── Sobre qué se mide ── */}
+      <div className="rounded-lg border p-3 space-y-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" checked={!porEquipos} onChange={() => setPorEquipos(false)} />
+            Por producto {sku ? <b>({sku})</b> : <span className="text-gray-500">(ninguno elegido)</span>}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" checked={porEquipos} onChange={() => setPorEquipos(true)} />
+            Equipos sueltos — <span className="text-gray-500">sin golden</span>
+          </label>
+        </div>
+
+        {porEquipos && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-600">
+              Elige los equipos <strong>en el orden del montaje</strong>: el primero es
+              <span className="font-mono"> M</span>, el siguiente
+              <span className="font-mono"> L1</span>, y así. El orden define los nombres de
+              canal, igual que en un golden — con otro orden los nombres no significan lo
+              mismo.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(enRed.data ?? []).map((d) => {
+                const i = elegidos.indexOf(d.ip || "");
+                return (
+                  <button key={d.unit} onClick={() => d.ip && alternar(d.ip)}
+                          className={`px-3 py-1.5 rounded border text-sm ${
+                            i >= 0 ? "bg-slate-900 text-white border-slate-900" : "hover:bg-slate-100"}`}>
+                    {i >= 0 && <span className="font-mono mr-1">{i === 0 ? "M" : `L${i}`}</span>}
+                    {d.unit}
+                  </button>
+                );
+              })}
+              {!(enRed.data ?? []).length && (
+                <span className="text-sm text-gray-500">Ningún equipo en la red.</span>
+              )}
+            </div>
+            {elegidos.length > 0 && (
+              <p className="text-xs text-gray-600">
+                {elegidos.length * 32} canales — {nombreDestino}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-wrap gap-2">
-        <Button onClick={medir} disabled={midiendo || !sku}>
+        <Button variant="outline" onClick={correrModulos} disabled={midiendo || !destino}>
+          Validar módulos <span className="text-xs ml-1 opacity-70">(sin arnés)</span>
+        </Button>
+        <Button variant="outline" onClick={correrBarrido} disabled={midiendo || !destino}>
+          Ver qué hay conectado
+        </Button>
+        <Button onClick={medir} disabled={midiendo || !destino}>
           <Waves className="w-4 h-4 mr-2" />
-          {midiendo ? "Midiendo…" : "Medir todas las líneas del golden"}
+          {midiendo ? "Midiendo…" : porEquipos ? "Medir las líneas que encuentre" : "Medir todas las líneas del golden"}
         </Button>
         {lineas && (
           <>
@@ -154,6 +264,74 @@ export default function AdvancedScope({ sku }: { sku: string }) {
           </>
         )}
       </div>
+
+      {modulos && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">
+              Módulos: {modulos.ok
+                ? <span className="text-green-700">{modulos.total} canales sanos</span>
+                : <span className="text-red-700">{modulos.malos.length} de {modulos.total} pegados a masa</span>}
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Medido con el arnés <strong>fuera</strong>: lo que salga mal aquí es de la placa.
+              Un canal pegado a masa y un cable roto se ven igual en el mapa, y esta es la
+              única medida que los separa.
+            </p>
+          </CardHeader>
+          {!modulos.ok && (
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {modulos.malos.map((m: any) => (
+                  <Badge key={m.canal} variant="destructive" className="font-mono">
+                    {m.canal} · {m.v?.toFixed?.(3) ?? m.v} V
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {barrido && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">
+              {barrido.conexiones.length} conexiones · {barrido.aislados.length} canales libres
+              <span className="text-xs font-normal text-gray-500 ml-2">
+                de {barrido.canales} · huella {barrido.huella}
+              </span>
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Lo que hay conectado ahora mismo. Sin golden no hay veredicto — esto no dice
+              bien ni mal, dice qué ve.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              {barrido.conexiones.map((net: string[], i: number) => (
+                <Badge key={i} variant={net.length > 2 ? "destructive" : "secondary"} className="font-mono">
+                  {net.join(" ↔ ")}
+                </Badge>
+              ))}
+              {!barrido.conexiones.length && (
+                <span className="text-sm text-gray-500">Nada conectado: todos los canales libres.</span>
+              )}
+            </div>
+            {barrido.conexiones.some((n: string[]) => n.length > 2) && (
+              <p className="text-sm text-red-700">
+                En rojo, nets de más de dos canales: ahí hay un puente.
+              </p>
+            )}
+            {barrido.aislados.length > 0 && (
+              <details className="text-xs text-gray-600">
+                <summary className="cursor-pointer">Ver los {barrido.aislados.length} canales libres</summary>
+                <p className="font-mono mt-1 break-all">{barrido.aislados.join("  ")}</p>
+              </details>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {lineas && (
         <div className="grid gap-3 md:grid-cols-2">

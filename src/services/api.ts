@@ -41,6 +41,9 @@ export interface DiscoveredTester {
   host: string | null; ip: string | null; port: number; seen: string;
 }
 
+/** Sobre qué se mide: un producto con golden, o equipos sueltos en orden. */
+export type Destino = { sku: string; hosts?: never } | { hosts: string[]; sku?: never };
+
 export interface Muestra { t: number; mv: number | null; nivel: number }
 export interface EstadoNivel { media: number | null; sd: number | null; min: number | null; max: number | null }
 export interface LineaOnda {
@@ -320,18 +323,31 @@ export const api = {
   // ── Avanzado: osciloscopio lento ──
   // OJO con las expectativas: ~324 muestras/s. No hay diagrama de ojo ni
   // tiempo de subida; lo que mide es NIVEL y ESTABILIDAD.
+  // `destino` es una de las dos puertas: por producto (sku) o por equipos
+  // sueltos (hosts, EN ORDEN — define los nombres M, L1, L2).
   avanzado: {
-    lineas: (sku: string) => j<{
-      ok: boolean; error?: string; sku: string; ms_por_muestra: number;
-      lineas: LineaOnda[];
-    }>("/api/avanzado/lineas", { method: "POST", body: JSON.stringify({ sku }) }),
-    onda: (sku: string, a: string, b: string, ciclos = 3) => j<
+    lineas: (d: Destino) => j<{
+      ok: boolean; error?: string; sku: string | null; con_golden: boolean;
+      ms_por_muestra: number; lineas: LineaOnda[];
+    }>("/api/avanzado/lineas", { method: "POST", body: JSON.stringify(d) }),
+    onda: (d: Destino, a: string, b: string, ciclos = 3) => j<
       { ok: boolean; error?: string } & LineaOnda & { muestras: Muestra[]; misma_unidad: boolean }
-    >("/api/avanzado/onda", { method: "POST", body: JSON.stringify({ sku, a, b, ciclos }) }),
-    acoplamiento: (sku: string, canal: string) => j<{
+    >("/api/avanzado/onda", { method: "POST", body: JSON.stringify({ ...d, a, b, ciclos }) }),
+    acoplamiento: (d: Destino, canal: string) => j<{
       ok: boolean; error?: string; excitado: string;
       lineas: { canal: string; g: number; mv: number }[];
-    }>("/api/avanzado/acoplamiento", { method: "POST", body: JSON.stringify({ sku, canal }) }),
+    }>("/api/avanzado/acoplamiento", { method: "POST", body: JSON.stringify({ ...d, canal }) }),
+    // Que hay conectado AHORA, sin golden y sin veredicto.
+    barrido: (d: Destino) => j<{
+      ok: boolean; error?: string; canales: number; huella: string;
+      unidades: { host: string; canales: number; base: number; etiqueta: string }[];
+      conexiones: string[][]; aislados: string[];
+    }>("/api/avanzado/barrido", { method: "POST", body: JSON.stringify(d) }),
+    // Salud de las placas, con el arnes FUERA.
+    modulos: (d: Destino) => j<{
+      ok: boolean; error?: string; total: number;
+      malos: { canal: string; g: number; v: number; r: number }[];
+    }>("/api/avanzado/modulos", { method: "POST", body: JSON.stringify(d) }),
   },
 
   // ── Diagnostico ──

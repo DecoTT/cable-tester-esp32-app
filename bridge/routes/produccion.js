@@ -11,7 +11,7 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   abrirUnidades, barrer, construirNets, huella, chName, totalCanales,
-  ledsDeFallos, clasificarAislado,
+  ledsDeFallos, clasificarAislado, validarModulos,
 } from "../measure.js";
 import { cargarFixture, nombreFisico, describirLinea } from "../fixture.js";
 import { DATA_DIR, audit, db, now, todayYMD, nextLoteId, getSetting, setSetting } from "../db.js";
@@ -724,28 +724,53 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   //
   // Recibe el SKU y saca de SU job las unidades y el orden. Medir con otro
   // montaje daria numeros que parecen validos y no lo son.
-  const conUnidadesDelSku = async (sku, fn, res) => {
+  /**
+   * Abre unidades para medir: por SKU, o por una lista de equipos a mano.
+   *
+   * POR QUE LAS DOS PUERTAS
+   *
+   * Exigir SKU dejaba sin herramientas justo cuando mas falta hacen: al montar
+   * los modulos y comprobar que salieron bien, al cablear un socket nuevo, o
+   * con un equipo sospechoso. En esos momentos NO HAY golden todavia — el
+   * golden es el final del camino, no el principio.
+   *
+   * Con `hosts` se mide lo que haya conectado: 16 canales, 32+32, 32+32+32.
+   * Sin golden no hay veredicto, y no hace falta: lo que se quiere es VER.
+   *
+   * El ORDEN de los hosts sigue importando, tambien aqui: define los nombres
+   * de canal (M, L1, L2). Se respeta el que llegue.
+   */
+  const conUnidades = async ({ sku, hosts: hostsPedidos }, fn, res) => {
     let units = null;
     let reservados = [];
     try {
-      const job = db.prepare(
-        "SELECT * FROM jobs WHERE sku = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1"
-      ).get(sku);
-      if (!job) return res.status(404).json({ error: `${sku} no tiene ningún golden aprobado` });
-      const hosts = JSON.parse(job.hosts || "[]");
-      if (!hosts.length) return res.status(422).json({ error: "el job no guardó las unidades" });
+      let hosts = Array.isArray(hostsPedidos) ? hostsPedidos.filter(Boolean) : [];
+      let job = null, g = null, fixture = null;
+
+      if (!hosts.length) {
+        if (!sku) return res.status(400).json({ error: "hacen falta un SKU o una lista de equipos" });
+        job = db.prepare(
+          "SELECT * FROM jobs WHERE sku = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1"
+        ).get(sku);
+        if (!job) return res.status(404).json({ error: `${sku} no tiene ningún golden aprobado` });
+        hosts = JSON.parse(job.hosts || "[]");
+        if (!hosts.length) return res.status(422).json({ error: "el job no guardó las unidades" });
+      }
 
       if (!tomar(hosts)) return res.status(409).json({ error: "ese equipo está ocupado" });
       reservados = hosts;
 
       units = await abrirUnidades(hosts);
       const n = totalCanales(units);
-      if (n !== job.channels) {
-        throw new Error(`el job es de ${job.channels} canales y el montaje tiene ${n}`);
+
+      if (job) {
+        if (n !== job.channels) {
+          throw new Error(`el job es de ${job.channels} canales y el montaje tiene ${n}`);
+        }
+        const gp = path.join(GOLD_DIR, `${job.golden}.json`);
+        g = fs.existsSync(gp) ? JSON.parse(fs.readFileSync(gp, "utf8")) : null;
+        fixture = g?.fixture ? cargarFixture(g.fixture) : null;
       }
-      const gp = path.join(GOLD_DIR, `${job.golden}.json`);
-      const g = fs.existsSync(gp) ? JSON.parse(fs.readFileSync(gp, "utf8")) : null;
-      const fixture = g?.fixture ? cargarFixture(g.fixture) : null;
 
       await fn({ units, n, job, golden: g, fixture, res });
     } catch (e) {
@@ -755,11 +780,12 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       soltar(reservados);
     }
   };
+  const conUnidadesDelSku = (sku, fn, res) => conUnidades({ sku }, fn, res);
 
   // Una linea: onda cuadrada y voltios reales.
   app.post("/api/avanzado/onda", (req, res) => {
-    const { sku, a, b, ciclos } = req.body ?? {};
-    conUnidadesDelSku(sku, async ({ units, res: r }) => {
+    const { sku, hosts, a, b, ciclos } = req.body ?? {};
+    conUnidades({ sku, hosts }, async ({ units, res: r }) => {
       const idx = new Map();
       for (let i = 0; i < totalCanales(units); i++) idx.set(chName(i, units), i);
       const ga = typeof a === "number" ? a : idx.get(a);
@@ -771,16 +797,29 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
 
   // Todas las lineas del golden, una tras otra.
   app.post("/api/avanzado/lineas", (req, res) => {
-    const { sku } = req.body ?? {};
-    conUnidadesDelSku(sku, async ({ units, golden, res: r }) => {
-      if (!golden) return r.status(404).json({ error: "falta el fichero de golden" });
+    const { sku, hosts } = req.body ?? {};
+    conUnidades({ sku, hosts }, async ({ units, golden, res: r }) => {
+      const n = totalCanales(units);
       const idx = new Map();
-      for (let i = 0; i < totalCanales(units); i++) idx.set(chName(i, units), i);
+      for (let i = 0; i < n; i++) idx.set(chName(i, units), i);
+
+      // Con golden se miden SUS lineas. Sin golden se barre y se miden las que
+      // haya: es el caso de un arnes recien cableado, donde todavia no existe
+      // referencia contra la que comparar y lo que se quiere es ver que hay.
+      let pares;
+      if (golden) {
+        pares = golden.nets.filter((net) => net.length >= 2).map((net) => [net[0], net[1]]);
+      } else {
+        const conn = await barrer(units, (hecho, total) =>
+          emit("medida:progreso", { fase: "avanzado", hecho, total }));
+        const { nets } = construirNets(conn, n);
+        pares = nets.filter((net) => net.length >= 2)
+                    .map((net) => [chName(net[0], units), chName(net[1], units)]);
+      }
 
       const lineas = [];
-      for (const net of golden.nets) {
-        if (net.length < 2) continue;
-        const ga = idx.get(net[0]), gb = idx.get(net[1]);
+      for (const [na, nb] of pares) {
+        const ga = idx.get(na), gb = idx.get(nb);
         if (ga == null || gb == null) continue;
         const o = await onda(units, ga, gb, { ciclos: 2, porNivel: 8 });
         lineas.push({
@@ -788,17 +827,69 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
           alto: o.alto, bajo: o.bajo, tipo: o.tipo, explicacion: o.explicacion,
           traza: o.muestras.map((m) => ({ t: m.t, mv: m.mv, nivel: m.nivel })),
         });
-        emit("medida:progreso", { fase: "avanzado", hecho: lineas.length, total: golden.nets.length });
+        emit("medida:progreso", { fase: "avanzado", hecho: lineas.length, total: pares.length });
       }
-      audit("avanzado", "lineas", sku, null, `${lineas.length} línea(s)`);
-      r.json({ ok: true, sku, ms_por_muestra: 3.09, lineas });
+      audit("avanzado", "lineas", sku ?? "(equipos sueltos)", null, `${lineas.length} línea(s)`);
+      r.json({ ok: true, sku: sku ?? null, con_golden: !!golden, ms_por_muestra: 3.09, lineas });
+    }, res);
+  });
+
+  /**
+   * Barrido libre: que hay conectado AHORA, sin golden y sin veredicto.
+   *
+   * Es la vista previa antes de existir el producto: modulos recien montados,
+   * un socket recien cableado, un arnes a medio rutear. No dice "bien" ni
+   * "mal" —no hay contra que compararlo— dice QUE VE.
+   *
+   * Sirve tambien para el caso feo: con una placa con canales pegados a masa,
+   * aqui se ven como aislados y se sabe antes de perder tiempo cableando.
+   */
+  app.post("/api/avanzado/barrido", (req, res) => {
+    const { sku, hosts } = req.body ?? {};
+    conUnidades({ sku, hosts }, async ({ units, res: r }) => {
+      const n = totalCanales(units);
+      const conn = await barrer(units, (hecho, total) =>
+        emit("medida:progreso", { fase: "avanzado", hecho, total }));
+      const { nets, aislados } = construirNets(conn, n);
+
+      const porUnidad = units.map((u) => ({
+        host: u.host, canales: u.n, base: u.base,
+        etiqueta: u.index === 0 ? "M" : `L${u.index}`,
+      }));
+
+      audit("avanzado", "barrido", sku ?? "(equipos sueltos)", null,
+            `${nets.length} conexiones, ${aislados.length} aislados en ${n} canales`);
+
+      r.json({
+        ok: true, canales: n, unidades: porUnidad,
+        huella: huella(nets, aislados, units),
+        conexiones: nets.map((net) => net.map((c) => chName(c, units))),
+        aislados: aislados.map((c) => chName(c, units)),
+      });
+    }, res);
+  });
+
+  /**
+   * Salud de los modulos, SIN arnes conectado.
+   *
+   * Un canal pegado a masa y un cable roto se ven IGUAL en el mapa: los dos
+   * salen como aislado. Por eso esto se mide con el arnes FUERA — asi lo que
+   * salga mal es de la placa, sin ambiguedad.
+   */
+  app.post("/api/avanzado/modulos", (req, res) => {
+    const { sku, hosts } = req.body ?? {};
+    conUnidades({ sku, hosts }, async ({ units, res: r }) => {
+      const { malos, total } = await validarModulos(units, (hecho, t) =>
+        emit("medida:progreso", { fase: "avanzado", hecho, total: t }));
+      audit("avanzado", "modulos", sku ?? "(equipos sueltos)", null, `${malos.length}/${total} malos`);
+      r.json({ ok: malos.length === 0, total, malos });
     }, res);
   });
 
   // Acoplamiento: lo que aparece en los canales al aire.
   app.post("/api/avanzado/acoplamiento", (req, res) => {
-    const { sku, canal } = req.body ?? {};
-    conUnidadesDelSku(sku, async ({ units, res: r }) => {
+    const { sku, hosts, canal } = req.body ?? {};
+    conUnidades({ sku, hosts }, async ({ units, res: r }) => {
       const idx = new Map();
       for (let i = 0; i < totalCanales(units); i++) idx.set(chName(i, units), i);
       const ga = typeof canal === "number" ? canal : idx.get(canal);
