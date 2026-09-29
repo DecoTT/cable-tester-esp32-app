@@ -132,6 +132,8 @@ export type EventoSocket =
   // Un canal se puso alto pero a media tension: es acoplamiento del vecino, no
   // la punta. Se avisa para que no parezca que la app no ve nada.
   | { tipo: "descartado"; canal: string; mv: number; mensaje: string }
+  // Hay tension pero no hay conector abierto: no se anota nada, y se dice.
+  | { tipo: "sin_conector"; canal: string; mensaje: string }
   | { tipo: "error"; mensaje: string };
 
 export const api = {

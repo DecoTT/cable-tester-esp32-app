@@ -177,6 +177,9 @@ export class SesionSocket {
         }
       }
 
+      if (process.env.CT32_DEBUG_SOCKET && altos.size)
+        console.log("[socket] altos:", [...altos].join(" "));
+
       // Los que dejaron de estar altos pierden la racha.
       for (const c of [...this._candidatos.keys()]) {
         if (!altos.has(c)) this._candidatos.delete(c);
@@ -188,6 +191,25 @@ export class SesionSocket {
           const interno = chName(g, this.units);
           if (!altos.has(interno)) continue;
           if (this.vistos.has(interno)) continue;   // ya anotado
+
+          // SIN CONECTOR ABIERTO NO SE ANOTA NADA.
+          //
+          // La sesion empieza a escuchar al pulsar "Escuchar", y el conector se
+          // abre despues — el tiempo que se tarda en teclear su nombre. Si en
+          // ese hueco la punta esta tocando algo, el canal se marcaba como
+          // visto y quedaba GASTADO: al abrir el conector ya no se podia
+          // detectar nunca, y el operador ve un pin que no responde sin
+          // ninguna explicacion.
+          //
+          // Paso de verdad: la punta estaba puesta en CN14 antes de abrirlo, y
+          // la sesion dio 0 de 10 con el canal correcto a 3300 mV.
+          if (!this.conector) {
+            this.emit({
+              tipo: "sin_conector", canal: interno,
+              mensaje: `Hay tensión en ${interno}, pero no has abierto ningún conector.`,
+            });
+            continue;
+          }
 
           // CONFIRMACION POR TENSION — el filtro que de verdad distingue.
           //
@@ -201,6 +223,7 @@ export class SesionSocket {
           // debajo. Cuesta una lectura de ADC por candidato, y solo se paga
           // cuando hay candidato.
           const mv = Math.round((await u.volts(b)) * 1000);
+          if (process.env.CT32_DEBUG_SOCKET) console.log(`[socket] ${interno} -> ${mv} mV`);
           if (mv < MIN_MV_PUNTA) {
             this.emit({
               tipo: "descartado", canal: interno, mv,
@@ -213,9 +236,7 @@ export class SesionSocket {
           this._candidatos.delete(interno);
           const pin = this.detectados.length + 1;
           this.detectados.push({ pin, canal: interno, g });
-          if (this.conector) {
-            this.mapa[interno] = { conector: this.conector, pin };
-          }
+          this.mapa[interno] = { conector: this.conector, pin };
           // La UI pita con esto. El operador confirma de oido que ese pin ya
           // quedo, sin apartar la vista del conector.
           this.emit({

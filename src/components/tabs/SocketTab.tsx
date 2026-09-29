@@ -84,6 +84,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   const [fixtures, setFixtures] = useState<FixtureInfo[]>([]);
   const [total, setTotal] = useState(0);
   const [descartes, setDescartes] = useState<{ canal: string; mv: number; t: number }[]>([]);
+  const [aviso, setAviso] = useState<string | null>(null);
   // Un socket puede servir a varios SKU, asi que el nombre se puede editar: el
   // sugerido es por SKU, pero si dos productos comparten fixture se le pone el
   // mismo nombre a proposito y los dos goldens apuntan ahi.
@@ -130,7 +131,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
       switch (ev.tipo) {
         case "arrancado": setCorriendo(true); break;
         case "parado":    setCorriendo(false); setEnCurso(null); break;
-        case "conector":  setEnCurso(ev.conector); setPines([]); break;
+        case "conector":  setEnCurso(ev.conector); setPines([]); setAviso(null); break;
         case "detectado":
           pito.ok();
           setPines((p) => [...p, { pin: ev.pin, canal: ev.canal, conector: ev.conector }]);
@@ -139,6 +140,11 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
         // No es un fallo: es el filtro haciendo su trabajo. Se enseña para que
         // el operador sepa que la app SI esta viendo algo, y que lo descarta
         // por buenas razones — si no, parece que no responde.
+        // Tocar un pin sin conector abierto no anota nada — y hay que decirlo,
+        // porque si no parece que la punta no funciona.
+        case "sin_conector":
+          setAviso(ev.mensaje);
+          break;
         case "descartado":
           setDescartes((d) => [{ canal: ev.canal, mv: ev.mv, t: Date.now() }, ...d].slice(0, 5));
           break;
@@ -323,6 +329,12 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                 <Undo2 className="w-4 h-4 mr-2" />Deshacer
               </Button>
             </div>
+
+            {aviso && !enCurso && (
+              <div className="text-sm rounded border border-blue-200 bg-blue-50 text-blue-900 p-2">
+                {aviso} Pon su nombre arriba y pulsa <strong>Empezar</strong>.
+              </div>
+            )}
 
             {descartes.length > 0 && (
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
