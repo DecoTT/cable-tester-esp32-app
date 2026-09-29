@@ -131,7 +131,9 @@ export type EventoSocket =
   | { tipo: "conector_fin"; conector: string; detectados: number; esperados: number; ok: boolean; faltan: number }
   // Un canal se puso alto pero a media tension: es acoplamiento del vecino, no
   // la punta. Se avisa para que no parezca que la app no ve nada.
-  | { tipo: "descartado"; canal: string; mv: number; mensaje: string }
+  | { tipo: "descartado"; canal: string; mv: number; mv_forzado?: number; mensaje: string }
+  // Media tension PERO con continuidad: no es un fantasma, es un puente real.
+  | { tipo: "puente"; canal: string; mv: number; mv_forzado: number; ohm: number | null; mensaje: string }
   // Hay tension pero no hay conector abierto: no se anota nada, y se dice.
   | { tipo: "sin_conector"; canal: string; mensaje: string }
   | { tipo: "error"; mensaje: string };

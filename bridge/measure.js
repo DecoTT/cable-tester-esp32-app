@@ -121,6 +121,54 @@ export class Unit {
     return ((r[0] >>> 0) & (r[1] >>> 0)) >>> 0;
   }
 
+  /**
+   * ¿Este canal esta ACOPLADO o UNIDO al que tiene tension?
+   *
+   * Leer la tension no basta para decidirlo. Un vecino acoplado da 2,3 V, pero
+   * un vecino unido por una resistencia TAMBIEN puede dar 2,3 V — y eso no es
+   * un fantasma, es un defecto que hay que ver.
+   *
+   * Lo que si los separa es que el acoplamiento es CAPACITIVO: no hay camino de
+   * continua. Asi que se fuerza el canal a masa y se mira si puede bajarlo:
+   *
+   *   · acoplado  -> no hay quien lo sostenga, cae a ~0 V
+   *   · unido     -> la fuente lo sigue tirando arriba y se queda a medias
+   *
+   * Y la tension que queda DICE CUANTO vale la union. El nodo es un divisor
+   * entre la resistencia del enlace y los 680 ohm del propio canal:
+   *
+   *   V = 3.3 · 680 / (R + 680)   ->   R = 680 · (3.3/V − 1)
+   *
+   * Union dura (R≈0) -> ~3,3 V. R=680 -> 1,65 V. R=10k -> 0,2 V.
+   *
+   * Cuesta dos peticiones y solo se paga cuando hay un candidato dudoso.
+   */
+  async vinculo(ch) {
+    const u = ch < 16 ? 0 : 1;
+    const bit = ch < 16 ? ch : ch - 16;
+    const lado = ch < 16 ? 0 : 1;
+
+    const r = await this.raw([
+      `io_dir ${u} ${(0xffff & ~(1 << bit)) >>> 0}`,   // solo este, salida
+      `io_dir ${1 - u} 0xFFFF`,
+      `io_wr  ${u} 0x0000`,                            // y a masa
+      "delay_us 3000",
+      `adc_rd ${lado} ${ch % 16}`,
+    ]);
+    // Devolver el canal a entrada: el sondeo siguiente lo necesita libre.
+    await this.raw([`io_dir 0 0xFFFF`, `io_dir 1 0xFFFF`]);
+
+    const mv = r[4] === null ? null : r[4];
+    if (mv === null) return { mv: null, ohm: null, unido: false };
+
+    const v = mv / 1000;
+    // Por debajo de 150 mV no hay nada que lo sostenga: es acoplamiento.
+    // Por encima, hay camino de continua y se puede poner numero.
+    const unido = mv >= 150;
+    const ohm = unido && v < 3.28 ? Math.round(680 * (3.3 / v - 1)) : (unido ? 0 : null);
+    return { mv, ohm, unido };
+  }
+
   /** Excita un canal y lo MANTIENE mientras las demas muestrean. */
   async driveHold(ch, level) {
     const u = ch < 16 ? 0 : 1;

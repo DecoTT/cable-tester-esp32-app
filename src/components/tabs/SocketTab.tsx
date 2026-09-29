@@ -85,6 +85,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   const [total, setTotal] = useState(0);
   const [descartes, setDescartes] = useState<{ canal: string; mv: number; t: number }[]>([]);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [puentes, setPuentes] = useState<{ canal: string; ohm: number | null; t: number }[]>([]);
   // Un socket puede servir a varios SKU, asi que el nombre se puede editar: el
   // sugerido es por SKU, pero si dos productos comparten fixture se le pone el
   // mismo nombre a proposito y los dos goldens apuntan ahi.
@@ -144,6 +145,13 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
         // porque si no parece que la punta no funciona.
         case "sin_conector":
           setAviso(ev.mensaje);
+          break;
+        // Esto NO es ruido: es un pin con continuidad que no deberia tenerla.
+        // Se separa de los descartes y se avisa fuerte.
+        case "puente":
+          pito.error();
+          setPuentes((p) => [{ canal: ev.canal, ohm: ev.ohm, t: Date.now() }, ...p].slice(0, 5));
+          toast({ variant: "destructive", title: `Puente en ${ev.canal}`, description: ev.mensaje });
           break;
         case "descartado":
           setDescartes((d) => [{ canal: ev.canal, mv: ev.mv, t: Date.now() }, ...d].slice(0, 5));
@@ -333,6 +341,17 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
             {aviso && !enCurso && (
               <div className="text-sm rounded border border-blue-200 bg-blue-50 text-blue-900 p-2">
                 {aviso} Pon su nombre arriba y pulsa <strong>Empezar</strong>.
+              </div>
+            )}
+
+            {puentes.length > 0 && (
+              <div className="text-sm rounded border border-red-300 bg-red-50 text-red-900 p-2">
+                <span className="font-medium">Con continuidad, no acoplamiento:</span>{" "}
+                {puentes.map((p) => `${p.canal}${p.ohm != null ? ` (~${p.ohm} Ω)` : ""}`).join(", ")}
+                <div className="text-red-800 mt-0.5">
+                  Estos pines siguen arriba aunque se fuercen a masa: hay camino de continua.
+                  No son fantasmas — revisa el socket.
+                </div>
               </div>
             )}
 

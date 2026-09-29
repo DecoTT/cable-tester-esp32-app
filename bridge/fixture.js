@@ -225,10 +225,28 @@ export class SesionSocket {
           const mv = Math.round((await u.volts(b)) * 1000);
           if (process.env.CT32_DEBUG_SOCKET) console.log(`[socket] ${interno} -> ${mv} mV`);
           if (mv < MIN_MV_PUNTA) {
-            this.emit({
-              tipo: "descartado", canal: interno, mv,
-              mensaje: `${interno} a ${mv} mV: acoplamiento, no la punta.`,
-            });
+            // NO basta con decir "media tension = acoplamiento".
+            //
+            // Un vecino UNIDO POR UNA RESISTENCIA da tambien media tension, y
+            // eso no es un fantasma: es un defecto. Descartarlo en silencio
+            // seria esconder justo lo que hay que encontrar.
+            //
+            // Se decide midiendo: se fuerza el canal a masa y se mira si puede
+            // bajarlo. El acoplamiento es capacitivo y no tiene quien lo
+            // sostenga; una union si.
+            const v = await u.vinculo(b);
+            if (v.unido) {
+              this.emit({
+                tipo: "puente", canal: interno, mv, mv_forzado: v.mv, ohm: v.ohm,
+                mensaje: `${interno} NO es acoplamiento: sigue arriba al forzarlo a masa ` +
+                         `(${v.mv} mV). Hay continuidad, unos ${v.ohm} Ω. Revisa ese pin.`,
+              });
+            } else {
+              this.emit({
+                tipo: "descartado", canal: interno, mv, mv_forzado: v.mv,
+                mensaje: `${interno} a ${mv} mV y cae a ${v.mv} mV al forzarlo: acoplamiento.`,
+              });
+            }
             continue;
           }
 
