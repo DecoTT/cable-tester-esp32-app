@@ -36,6 +36,10 @@ export interface TesterStatus {
   uptime_s: number; reset_reason: string; heap_free: number;
 }
 
+export interface PinIdent {
+  interno: string; fisico: string | null; conector: string | null; pin: number | null;
+}
+
 export interface DiscoveredTester {
   unit: string; role: string; sku: string | null; fw: string; api: number;
   host: string | null; ip: string | null; port: number; seen: string;
@@ -48,8 +52,13 @@ export interface Muestra { t: number; mv: number | null; nivel: number }
 export interface EstadoNivel { media: number | null; sd: number | null; min: number | null; max: number | null }
 export interface LineaOnda {
   a: string; b: string; ga?: number; gb?: number;
+  // Nombre fisico (CN13.7) cuando hay fixture; null cuando se trabaja con
+  // equipos sueltos y no hay socket mapeado contra el que traducir.
+  fisico_a?: string | null; fisico_b?: string | null;
+  conector_a?: string | null; pin_a?: number | null;
+  conector_b?: string | null; pin_b?: number | null;
   alto: EstadoNivel; bajo: EstadoNivel;
-  tipo: "unida" | "al_aire" | "abierta" | "resistiva" | "error" | "indefinido";
+  tipo: "unida" | "intermitente" | "al_aire" | "abierta" | "resistiva" | "error" | "indefinido";
   explicacion: string;
   traza?: Muestra[];
 }
@@ -156,6 +165,41 @@ export const api = {
     discovered:  () => j<DiscoveredTester[]>("/api/testers/discovered"),
     serialPorts: () => j<{ path: string; manufacturer: string; vendorId: string }[]>("/api/testers/serial-ports"),
     list:        () => j<TesterUnit[]>("/api/testers"),
+    // Parpadea los LEDs por POSICION: la 1a unidad da un destello, la 2a dos, la
+    // 3a tres. Es la forma de saber que caja es cual cuando no hay etiqueta.
+    identificar: (hosts: string[], segundos = 12) =>
+      j<{ ok: boolean; patron: { host: string; destellos: number }[] }>(
+        "/api/testers/identificar",
+        { method: "POST", body: JSON.stringify({ hosts, segundos }) }),
+
+    // Ordenar los equipos pulsando su boton: el orden de las pulsaciones es el
+    // orden del montaje. Mientras la captura esta abierta no lanzan prueba.
+    capturarOrden: (segundos = 90, modo: "boton" | "punta" | "reset" = "boton") =>
+      j<{ ok: boolean; segundos: number; modo: string; aviso: string | null }>(
+        "/api/testers/orden/capturar",
+        { method: "POST", body: JSON.stringify({ segundos, modo }) }),
+
+    orden: () =>
+      j<{
+        ok: boolean; capturando: boolean; resta: number; aviso: string | null;
+        modo: "boton" | "punta" | "reset" | null; choque: string | null;
+        unidades: { mac: string; unit: string; ip: string; posicion: string }[];
+      }>("/api/testers/orden"),
+
+    cerrarOrden: () => j<{ ok: boolean }>("/api/testers/orden", { method: "DELETE" }),
+
+    // "¿Esta cual es?": se pulsa SW2 y contesta quien es. Para pegar etiquetas.
+    // Espera bloqueando: no hay que sondear.
+    quienEs: (segundos = 60) =>
+      j<{ ok: boolean; mac?: string | null; unidad?: string; ip?: string;
+          registrada?: boolean; error?: string }>(
+        `/api/testers/quien-es?segundos=${segundos}`),
+
+    // Nombre fisico de la caja ("la del USB", "la segunda de la fila").
+    notas: (mac: string, notes: string) =>
+      j<{ ok: boolean; notes: string }>(`/api/testers/${encodeURIComponent(mac)}/notes`,
+        { method: "PATCH", body: JSON.stringify({ notes }) }),
+
     // Switch fisico que dispara la prueba. Vive en la NVS del ESP32, no aqui:
     // sobrevive a reinicios y a un OTA, y por eso se lee del propio equipo.
     trigger:     (mac: string) => j<{
@@ -266,6 +310,21 @@ export const api = {
 
   // ── Validacion de socket ──
   socket: {
+    // Identificar un pin con la punta: se toca y contesta cual es. Es el
+    // recorrido de socket al reves, y hace falta porque los numeros de pin son
+    // el orden en que se mapeo, no una serigrafia que se pueda leer.
+    identAbrir: (fixture: string, minutos = 15) =>
+      j<{ ok: boolean; avisos: string[]; unidades: { pos: string; unit: string; host: string }[]; error?: string }>(
+        "/api/socket/identificar/abrir",
+        { method: "POST", body: JSON.stringify({ fixture, minutos }) }),
+    identEstado: () =>
+      j<{ ok: boolean; activa: boolean;
+          actual: PinIdent[];
+          ultimo: { pines: PinIdent[]; cuando: string; varios: boolean } | null;
+          historial: { pines: PinIdent[]; cuando: string; varios: boolean }[] }>(
+        "/api/socket/identificar"),
+    identCerrar: () => j<{ ok: boolean }>("/api/socket/identificar/cerrar", { method: "POST" }),
+
     arrancar: () => j("/api/socket/arrancar", { method: "POST", body: "{}" }),
     conector: (nombre: string, esperados: number) =>
       j("/api/socket/conector", { method: "POST", body: JSON.stringify({ nombre, esperados }) }),

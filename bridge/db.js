@@ -49,6 +49,28 @@ CREATE TABLE IF NOT EXISTS fixtures (
   created_at  TEXT NOT NULL
 );
 
+-- Limites de resistencia. Una fila por SKU con linea='*' es el limite general;
+-- una fila con el nombre de una linea la exceptua.
+--
+-- Hacen falta los dos. Un umbral unico por producto castiga: una linea larga
+-- tiene legitimamente mas resistencia que una corta, y poner el limite donde
+-- quepa la larga deja pasar una corta que ya va mal. Pero una tabla entera de
+-- limites por linea es imposible de mantener a mano, asi que se empieza por el
+-- general y solo se exceptua donde duela.
+--
+-- Estos limites NO deciden si la pieza pasa: eso lo dicen las lineas abiertas
+-- y los cortos. Deciden que RECOMENDACION se le da al operador — reasentar un
+-- contacto o inspeccionar una terminal.
+CREATE TABLE IF NOT EXISTS limites_r (
+  sku      TEXT NOT NULL REFERENCES skus(codigo),
+  linea    TEXT NOT NULL,          -- '*' = el limite general del SKU
+  aviso    REAL,                   -- por encima: "reasienta o inspecciona"
+  rechazo  REAL,                   -- por encima: contacto inservible
+  nota     TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (sku, linea)
+);
+
 -- Un job = un golden aprobado para un SKU sobre un fixture concreto.
 -- nets: un byte por canal (net_id, 0 = aislado), igual que en el firmware.
 CREATE TABLE IF NOT EXISTS jobs (

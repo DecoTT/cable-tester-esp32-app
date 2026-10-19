@@ -27,7 +27,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { DATA_DIR } from "./db.js";
+import { DATA_DIR, db } from "./db.js";
 import { chName, totalCanales, locate } from "./measure.js";
 
 const FIX_DIR = path.join(DATA_DIR, "fixtures");
@@ -64,11 +64,42 @@ export function listarFixtures() {
     .filter(Boolean);
 }
 
+/**
+ * Cargar un fixture resolviendo sus unidades POR MAC.
+ *
+ * La IP guardada es una foto del dia que se mapeo. Si el DHCP la movio, la
+ * buena es la que tenga ahora esa MAC — y si la MAC ya no esta registrada, hay
+ * que decirlo, no seguir con una IP que hoy puede ser otra caja.
+ *
+ * Los fixtures anteriores a esto no llevan MAC: se cargan igual, pero se
+ * marcan `sin_mac` para que la pantalla pueda avisar de que ese no esta
+ * protegido contra un cambio de IP.
+ */
 export function cargarFixture(id) {
   asegurarDir();
   const p = path.join(FIX_DIR, `${id}.json`);
   if (!fs.existsSync(p)) return null;
-  return JSON.parse(fs.readFileSync(p, "utf8"));
+  const d = JSON.parse(fs.readFileSync(p, "utf8"));
+
+  const avisos = [];
+  d.unidades = (d.unidades ?? []).map((u, i) => {
+    const pos = i === 0 ? "M" : `L${i}`;
+    if (!u.mac) { avisos.push(`${pos}: el fixture no guarda MAC, va por IP (${u.host}).`); return u; }
+    const r = db.prepare("SELECT ip, unit FROM tester_units WHERE mac = ?").get(u.mac);
+    if (!r) {
+      avisos.push(`${pos}: la unidad ${u.unit || u.mac} no esta registrada en esta estacion.`);
+      return { ...u, desconocida: true };
+    }
+    if (r.ip && r.ip !== u.host) {
+      avisos.push(`${pos}: ${r.unit} cambio de IP (${u.host} -> ${r.ip}). Se usa la de ahora.`);
+      return { ...u, host: r.ip, unit: r.unit, movida: true };
+    }
+    return { ...u, unit: r.unit };
+  });
+
+  d.avisos = avisos;
+  d.sin_mac = (d.unidades ?? []).some((u) => !u.mac);
+  return d;
 }
 
 export function guardarFixture(id, datos) {
@@ -304,7 +335,14 @@ export class SesionSocket {
     return {
       nombre,
       creado: new Date().toISOString(),
-      unidades: this.units.map((u) => ({ host: u.host, canales: u.n })),
+      // Se guarda la MAC, no solo la IP. La IP la reparte el DHCP y cambia
+      // sola; la MAC es de la placa. Un fixture atado a IPs sigue pareciendo
+      // correcto el dia que el router reparte distinto, y lo unico que se nota
+      // es que los informes senalan el conector equivocado.
+      unidades: this.units.map((u) => {
+        const r = db.prepare("SELECT mac, unit FROM tester_units WHERE ip = ?").get(u.host);
+        return { host: u.host, canales: u.n, mac: r?.mac ?? null, unit: r?.unit ?? null };
+      }),
       mapa: this.mapa,
     };
   }

@@ -49,6 +49,18 @@ const PINES_PROHIBIDOS = [
   { pin: "18, 19",  motivo: "USB nativo del ESP32-C3" },
 ];
 
+// Los dos pulsadores que trae el modulo ESP32-C3 (SW1 y SW2 del esquematico)
+// NO sirven como disparador, y conviene que quede escrito: son los unicos
+// botones que hay en una placa sin cablear, asi que la idea de usarlos vuelve
+// cada vez que alguien mira la placa.
+const BOTONES_DEL_MODULO = [
+  { sw: "SW1", senal: "IO9",
+    motivo: "IO9 es SDA del I²C. Pulsarlo pone a masa la linea de datos de los " +
+            "TCA9535: corrompe la medida en curso y puede colgar el bus hasta el reset." },
+  { sw: "SW2", senal: "EN",
+    motivo: "Es el reset por hardware. No es una entrada: reinicia el modulo." },
+];
+
 export function registerTesterRoutes(app, { state, discovery, io, TesterClient, listTesterSerialPorts }) {
 
   /**
@@ -71,6 +83,74 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
     return { c: new TesterClient({ host }), efimero: true, fila };
   };
 
+  /**
+   * ¿Cuál de las cajas es esta? Parpadea sus LEDs.
+   *
+   * Las unidades se llaman 2898, 700C, 424C — los ultimos bytes de su MAC — y
+   * sobre la mesa no hay forma de saber cual es cual hasta que alguien pega una
+   * etiqueta. Elegir el ORDEN de montaje (M, L1, L2) a ciegas es como se acaba
+   * capturando un golden con las unidades cambiadas, que no da ningun error y
+   * hace que los informes apunten al conector equivocado.
+   *
+   * Se parpadea por POSICION: la primera unidad da un destello, la segunda dos,
+   * la tercera tres. Asi se identifican las tres de una pasada y se confirma el
+   * orden que se acaba de elegir, no solo quien es quien.
+   *
+   * Responde al momento y parpadea en segundo plano: son 12 segundos mirando
+   * las cajas, no una peticion que se queda colgada.
+   */
+  app.post("/api/testers/identificar", (req, res) => {
+    const { hosts = [], segundos = 12 } = req.body ?? {};
+    if (!Array.isArray(hosts) || !hosts.length) {
+      return res.status(400).json({ error: "faltan los equipos" });
+    }
+
+    const enviar = async (host, ops) => {
+      try {
+        await fetch(`http://${host}/api/raw`, {
+          method: "POST", headers: { "Content-Type": "text/plain" },
+          body: ops.join("\n"), signal: AbortSignal.timeout(4000),
+        });
+      } catch { /* una caja que no responde no puede tumbar a las demas */ }
+    };
+
+    hosts.forEach(async (host, i) => {
+      const destellos = i + 1;
+      const hasta = Date.now() + Math.min(60, Number(segundos) || 12) * 1000;
+      while (Date.now() < hasta) {
+        for (let k = 0; k < destellos; k++) {
+          await enviar(host, ["leds 1023"]);
+          await new Promise((r) => setTimeout(r, 180));
+          await enviar(host, ["leds 0"]);
+          await new Promise((r) => setTimeout(r, 180));
+        }
+        await new Promise((r) => setTimeout(r, 1400));
+      }
+      await enviar(host, ["leds 0"]);
+    });
+
+    res.json({
+      ok: true, segundos,
+      patron: hosts.map((h, i) => ({ host: h, destellos: i + 1 })),
+    });
+  });
+
+  /**
+   * Nombre fisico de una caja: "la del USB", "la segunda de la fila".
+   *
+   * Las unidades se llaman por los ultimos bytes de su MAC — 2898, 424C — y eso
+   * no se puede mirar en una mesa con tres cajas iguales. Aqui se guarda como
+   * se la llama en planta, que es lo unico que alguien va a reconocer.
+   */
+  app.patch("/api/testers/:mac/notes", (req, res) => {
+    const notes = String(req.body?.notes ?? "").slice(0, 200);
+    const r = db.prepare("UPDATE tester_units SET notes = ? WHERE mac = ?")
+                .run(notes, req.params.mac);
+    if (!r.changes) return res.status(404).json({ ok: false, error: "esa unidad no esta registrada" });
+    audit(req.body?.actor || "sistema", "tester.notes", "tester", req.params.mac, notes);
+    res.json({ ok: true, notes });
+  });
+
   // ── Disparador fisico ──────────────────────────────────────
   app.get("/api/testers/:mac/trigger", async (req, res) => {
     let cli = null;
@@ -83,10 +163,10 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
         fw: s.fw, unidad: s.unit, uptime_s: s.uptime_s,
         reset_reason: s.reset_reason, heap_free: s.heap_free,
         led_auto: s.led_auto, canales: s.channels,
-        pines: PINES_DISPARADOR, prohibidos: PINES_PROHIBIDOS,
+        pines: PINES_DISPARADOR, prohibidos: PINES_PROHIBIDOS, botones_modulo: BOTONES_DEL_MODULO,
       });
     } catch (e) {
-      res.json({ ok: false, error: String(e.message ?? e), pines: PINES_DISPARADOR, prohibidos: PINES_PROHIBIDOS });
+      res.json({ ok: false, error: String(e.message ?? e), pines: PINES_DISPARADOR, prohibidos: PINES_PROHIBIDOS, botones_modulo: BOTONES_DEL_MODULO });
     } finally {
       if (cli?.efimero) cli.c.close();
     }
@@ -261,6 +341,8 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
     if (job.status !== "approved") {
       return res.json({ ok: false, error: `el job está en estado '${job.status}', debe estar aprobado` });
     }
+    // Solo se cuenta CUANTAS unidades usa el job, no a donde conectarse, asi
+    // que aqui la IP guardada sirve igual.
     const hosts = JSON.parse(job.hosts || "[]");
     if (hosts.length > 1) {
       return res.json({

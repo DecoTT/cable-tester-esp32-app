@@ -1,6 +1,9 @@
 // routes/skus.js — SKUs, fixtures y jobs (goldens).
 
-import { db, now, audit } from "../db.js";
+import fs from "node:fs";
+import path from "node:path";
+import { db, now, audit, DATA_DIR } from "../db.js";
+import { RC_OK, RC_WARN } from "../measure.js";
 import { DEFAULT_TEMPLATES } from "../labels/render.js";
 
 export function registerSkuRoutes(app) {
@@ -36,6 +39,88 @@ export function registerSkuRoutes(app) {
   });
 
   // ── Fixtures ────────────────────────────────────────────────
+  // ── Limites de resistencia, por SKU y por linea ────────────
+  //
+  // Devuelve siempre el general (linea '*'); si no se ha fijado, cae a los
+  // umbrales del firmware para que nunca conteste "no hay limites".
+  app.get("/api/skus/:codigo/limites", (req, res) => {
+    const filas = db.prepare("SELECT * FROM limites_r WHERE sku = ? ORDER BY linea").all(req.params.codigo);
+    const gen = filas.find((f) => f.linea === "*");
+    res.json({
+      ok: true,
+      general: gen ?? { linea: "*", aviso: RC_OK, rechazo: RC_WARN, nota: "por defecto del firmware" },
+      excepciones: filas.filter((f) => f.linea !== "*"),
+    });
+  });
+
+  app.put("/api/skus/:codigo/limites", (req, res) => {
+    const { linea = "*", aviso = null, rechazo = null, nota = null, actor = "sistema" } = req.body || {};
+    if (!db.prepare("SELECT codigo FROM skus WHERE codigo = ?").get(req.params.codigo)) {
+      return res.status(404).json({ ok: false, error: "ese SKU no existe" });
+    }
+    if (aviso != null && rechazo != null && Number(aviso) >= Number(rechazo)) {
+      return res.status(400).json({ ok: false, error: "el aviso tiene que ser menor que el rechazo" });
+    }
+    db.prepare(`INSERT INTO limites_r(sku, linea, aviso, rechazo, nota, updated_at)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(sku, linea) DO UPDATE SET aviso=excluded.aviso,
+                  rechazo=excluded.rechazo, nota=excluded.nota, updated_at=excluded.updated_at`)
+      .run(req.params.codigo, linea, aviso == null ? null : Number(aviso),
+           rechazo == null ? null : Number(rechazo), nota, now());
+    audit(actor, "limites", "sku", req.params.codigo, `${linea}: aviso ${aviso} rechazo ${rechazo}`);
+    res.json({ ok: true });
+  });
+
+  app.delete("/api/skus/:codigo/limites/:linea", (req, res) => {
+    db.prepare("DELETE FROM limites_r WHERE sku = ? AND linea = ?")
+      .run(req.params.codigo, req.params.linea);
+    res.json({ ok: true });
+  });
+
+  /**
+   * Proponer limites a partir de lo MEDIDO en el golden.
+   *
+   * Un limite inventado no sirve: si se pone en 5 ohm porque suena redondo, una
+   * linea larga que siempre da 6 se queda avisando para siempre y el operador
+   * aprende a ignorar el aviso. Asi que se parte de lo que da la pieza.
+   *
+   * El suelo de 3 ohm no es arbitrario: la repetibilidad MEDIDA de este banco
+   * es +-0,45 ohm de mediana y 1,54 en el p90 (tres pasadas sin tocar nada).
+   * Un margen por debajo de eso avisaria por ruido propio.
+   */
+  app.post("/api/skus/:codigo/limites/proponer", (req, res) => {
+    const { factor = 3, suelo = 3, aplicar = false, actor = "sistema" } = req.body || {};
+    const job = db.prepare(
+      "SELECT golden FROM jobs WHERE sku = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1"
+    ).get(req.params.codigo);
+    if (!job?.golden) return res.status(404).json({ ok: false, error: "ese SKU no tiene golden aprobado" });
+    const gp = path.join(DATA_DIR, "goldens", `${job.golden}.json`);
+    if (!fs.existsSync(gp)) return res.status(404).json({ ok: false, error: "falta el fichero del golden" });
+    const g = JSON.parse(fs.readFileSync(gp, "utf8"));
+
+    const propuesta = (g.resistencias ?? []).map((x) => ({
+      linea: x.linea,
+      medido: x.r,
+      aviso: Math.max(Number(suelo), Number((x.r * Number(factor)).toFixed(1))),
+      rechazo: Math.max(Number(suelo) * 4, Number((x.r * Number(factor) * 4).toFixed(1))),
+    }));
+
+    if (aplicar) {
+      const ins = db.prepare(`INSERT INTO limites_r(sku, linea, aviso, rechazo, nota, updated_at)
+                              VALUES(?,?,?,?,?,?)
+                              ON CONFLICT(sku, linea) DO UPDATE SET aviso=excluded.aviso,
+                                rechazo=excluded.rechazo, nota=excluded.nota, updated_at=excluded.updated_at`);
+      const t = now();
+      db.transaction(() => {
+        for (const p of propuesta)
+          ins.run(req.params.codigo, p.linea, p.aviso, p.rechazo,
+                  `x${factor} sobre ${p.medido} ohm del golden`, t);
+      })();
+      audit(actor, "limites.proponer", "sku", req.params.codigo, `${propuesta.length} lineas`);
+    }
+    res.json({ ok: true, aplicado: !!aplicar, factor, suelo, lineas: propuesta });
+  });
+
   app.get("/api/skus/:codigo/fixtures", (req, res) => {
     const rows = db.prepare("SELECT * FROM fixtures WHERE sku = ? ORDER BY id").all(req.params.codigo);
     res.json(rows.map(r => ({ ...r, labels: JSON.parse(r.labels || "{}") })));

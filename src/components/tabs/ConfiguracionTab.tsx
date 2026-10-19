@@ -38,6 +38,52 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   const [importando, setImportando] = useState(false);
   const [detalle, setDetalle] = useState<TesterUnit | null>(null);
 
+  // ── Identificar una caja pulsando SW2 ────────────────────────────────
+  //
+  // Tres cajas iguales sobre la mesa y tres etiquetas impresas en la mano: la
+  // pregunta no es "donde esta la 700C", es "esta cual es". SW2 la reinicia y
+  // el uptime vuelve a cero, que es la unica senal que da una placa sin nada
+  // soldado. El boton de disparo (IO4) hay que soldarlo y SW1 no se puede
+  // tocar: cuelga de IO9, que es SDA del I2C.
+  // El resultado se queda FIJO en la pantalla hasta que se cierra. Un aviso que
+  // se desvanece no sirve aqui: entre que se pulsa SW2 y se mira la pantalla,
+  // se tiene la caja en una mano y la etiqueta en la otra.
+  const [esperandoSW2, setEsperandoSW2] = useState(false);
+  const [quedan, setQuedan] = useState(0);
+  const [identificada, setIdentificada] =
+    useState<{ mac: string | null; unidad: string; ip?: string; registrada?: boolean } | null>(null);
+  const [falloSW2, setFalloSW2] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!esperandoSW2) return;
+    const t = setInterval(() => setQuedan((q) => Math.max(0, q - 1)), 1000);
+    return () => clearInterval(t);
+  }, [esperandoSW2]);
+
+  const identificarPorSW2 = async () => {
+    setEsperandoSW2(true); setIdentificada(null); setFalloSW2(null); setQuedan(60);
+    try {
+      const r = await api.testers.quienEs(60);
+      if (!r.ok) { setFalloSW2(r.error ?? "no detecté ningún reinicio"); return; }
+      setIdentificada({ mac: r.mac ?? null, unidad: r.unidad!, ip: r.ip, registrada: r.registrada });
+    } catch (e: any) {
+      setFalloSW2(String(e?.message ?? e));
+    } finally {
+      setEsperandoSW2(false); setQuedan(0);
+    }
+  };
+
+  const ponerNombre = async (mac: string, actual: string) => {
+    const v = window.prompt("Cómo se la llama en planta (\"la del USB\", \"2ª de la fila\")", actual);
+    if (v == null) return;
+    try {
+      await api.testers.notas(mac, v);
+      testers.refetch();
+    } catch (e: any) {
+      toast({ title: "No se pudo guardar", description: String(e?.message ?? e), variant: "destructive" });
+    }
+  };
+
   const importar = async (file: File) => {
     setImportando(true);
     try {
@@ -112,6 +158,77 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   };
 
 
+  const panelSW2 = (
+    <>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" disabled={esperandoSW2}
+                          onClick={identificarPorSW2}>
+                    {esperandoSW2 ? `Esperando SW2… ${quedan}s` : "¿Cuál es cuál? Pulsa SW2"}
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Pulsa <span className="font-mono">SW2</span> (el de <span className="font-mono">EN</span>)
+                    en una caja y te digo cuál es, para pegarle su etiqueta. Se reinicia; no pierde nada.
+                  </span>
+                </div>
+
+                {esperandoSW2 && (
+                  <div className="rounded-lg border-2 border-blue-400 bg-blue-50 text-blue-900 p-3">
+                    <div className="font-medium">Pulsa SW2 ahora, en la caja que quieras identificar.</div>
+                    <div className="text-sm mt-0.5">
+                      Es el pulsador de <span className="font-mono">EN</span>, no el otro.
+                      Tarda ~10 s en volver a la red; hasta entonces no puedo decirte cuál es.
+                      Quedan {quedan}s.
+                    </div>
+                  </div>
+                )}
+
+                {identificada && !esperandoSW2 && (
+                  <div className="rounded-lg border-2 border-amber-500 bg-amber-50 p-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-semibold text-amber-900">
+                        La que pulsaste es {identificada.unidad}
+                      </div>
+                      <div className="text-sm text-amber-800 font-mono">
+                        {identificada.mac ?? identificada.ip}
+                      </div>
+                      {identificada.registrada === false && (
+                        <div className="text-sm text-amber-900 mt-1">
+                          Está en la red pero <strong>no registrada en esta estación</strong>.
+                          Conéctala arriba para poder usarla.
+                        </div>
+                      )}
+                      <div className="text-sm text-amber-800 mt-1">
+                        Pégale la etiqueta <span className="font-mono">CableTester32-{identificada.unidad}</span>.
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {identificada.mac && (
+                        <Button size="sm" variant="outline"
+                                onClick={() => ponerNombre(identificada.mac!,
+                                  testers.data?.find(t => t.mac === identificada.mac)?.notes ?? "")}>
+                          Ponerle nombre
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => setIdentificada(null)}>Cerrar</Button>
+                    </div>
+                  </div>
+                )}
+
+                {falloSW2 && !esperandoSW2 && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 text-red-900 p-3 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium">No detecté ningún reinicio: {falloSW2}.</div>
+                      <div className="text-sm mt-0.5">
+                        Si pulsaste y no lo vi, es que esa caja no está registrada en esta estación,
+                        o tardó más de un minuto en volver a la red.
+                      </div>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => setFalloSW2(null)}>Cerrar</Button>
+                  </div>
+                )}
+    </>
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -132,12 +249,20 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
             </p>
           ) : (
             <div className="space-y-2">
+              {panelSW2}
               {discovered.map(d => {
                 const already = testers.data?.some(t => t.unit === d.unit && t.connected);
                 return (
                   <div key={d.unit} className="flex items-center justify-between border rounded-lg p-3">
                     <div className="flex items-center gap-3">
                       <Badge>{d.unit}</Badge>
+                      {/* El hex no se puede mirar en una mesa con tres cajas iguales:
+                          si se le puso nombre fisico, aqui es donde hace falta. */}
+                      {testers.data?.find(t => t.unit === d.unit)?.notes && (
+                        <span className="text-xs text-gray-600 italic">
+                          {testers.data.find(t => t.unit === d.unit)!.notes}
+                        </span>
+                      )}
                       <Badge variant="outline">{d.role}</Badge>
                       <span className="font-mono text-sm">{d.ip}</span>
                       <span className="text-xs text-gray-500">fw {d.fw} · api {d.api}</span>
@@ -196,16 +321,21 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
             <p className="text-sm text-gray-500">Aún no hay testers registrados. Conecta uno arriba.</p>
           ) : (
             <div className="space-y-3">
+              {panelSW2}
               {testers.data!.map(t => {
                 const s = live[t.mac];
                 return (
-                  <div key={t.mac} className="border rounded-lg p-4">
+                  <div key={t.mac}
+                       className={`border rounded-lg p-4 ${identificada?.mac === t.mac
+                         ? "border-2 border-amber-500 bg-amber-50" : ""}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className={`w-2.5 h-2.5 rounded-full ${t.connected ? "bg-green-500" : "bg-gray-300"}`} />
                         <Badge>{t.unit}</Badge>
                         <Badge variant="outline">{t.role || "?"}</Badge>
                         <span className="font-mono text-xs text-gray-500">{t.mac}</span>
+                        {identificada?.mac === t.mac && <Badge className="bg-amber-500">← ESTA</Badge>}
+                        {t.notes && <span className="text-xs text-gray-600 italic">{t.notes}</span>}
                         {t.sku_bound ? <Badge variant="secondary">SKU {t.sku_bound}</Badge>
                                      : <Badge variant="outline" className="text-gray-400">sin SKU</Badge>}
                       </div>
@@ -224,6 +354,9 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => setDetalle(t)}>
                               Ver detalles y switch físico
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => ponerNombre(t.mac, t.notes ?? "")}>
+                              Nombre físico ("la del USB"…)
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

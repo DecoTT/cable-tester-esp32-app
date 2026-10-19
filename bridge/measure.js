@@ -170,14 +170,23 @@ export class Unit {
   }
 
   /** Excita un canal y lo MANTIENE mientras las demas muestrean. */
-  async driveHold(ch, level) {
+  /**
+   * Excitar y SOSTENER un canal.
+   *
+   * El milisegundo de espera es de sobra para la fisica: con 680 ohm y las
+   * decenas de pF de un arnes, la constante de tiempo esta en microsegundos.
+   * Se deja configurable de todos modos, porque "el barrido va demasiado
+   * rapido" es una hipotesis razonable y barata de descartar — y descartarla
+   * con una medida vale mas que darla por descartada de memoria.
+   */
+  async driveHold(ch, level, settleUs = 1000) {
     const u = ch < 16 ? 0 : 1;
     const bit = ch < 16 ? ch : ch - 16;
     await this.raw([
       `io_dir ${u} ${(0xffff & ~(1 << bit)) >>> 0}`,
       `io_dir ${1 - u} 0xFFFF`,
       `io_wr  ${u} ${level ? (1 << bit) >>> 0 : 0}`,
-      "delay_us 1000",
+      `delay_us ${Math.max(0, Math.round(settleUs))}`,
     ]);
   }
 
@@ -333,18 +342,42 @@ export function chName(g, units) {
  * misma placa, entre unidades, un canal unido a 3 o mas, y arneses sin parejas.
  * No se asume ninguna topologia.
  */
-export async function barrer(units, onProgress) {
+export async function barrer(units, onProgress, opciones = {}) {
   const n = totalCanales(units);
   const conn = Array.from({ length: n }, () => new Set());
 
-  for (let src = 0; src < n; src++) {
+  // Recorrer al reves (canal 95 -> 0) no deberia cambiar NADA: cada canal se
+  // excita por separado y la deteccion es por transicion, no por historia. Por
+  // eso sirve de control — si el mapa sale distinto segun el sentido, el mapa
+  // no lo dicta el arnes sino el orden en que preguntamos, y entonces ninguna
+  // medida de las de arriba vale.
+  const orden = Array.from({ length: n }, (_, i) => (opciones.invertido ? n - 1 - i : i));
+  let hechos = 0;
+
+  for (const src of orden) {
     const { u: owner, local } = locate(units, src);
     const masks = new Map();
 
     for (const level of [true, false]) {
       // El dueño excita y SOSTIENE: las demas leen mientras tanto, y el desfase
       // entre ellas da igual porque el nivel se mantiene.
-      await owner.driveHold(local, level);
+      await owner.driveHold(local, level, opciones.settleUs ?? 1000);
+
+      // EN SERIE, y no es descuido: leer las tres unidades en paralelo rompe
+      // la medida.
+      //
+      // MEDIDO (2026-09-30): con Promise.all el barrido baja de 24 s a 12 s y
+      // pasa a dar 8, 23 y 14 aperturas en tres pasadas seguidas sobre la misma
+      // pieza, que un momento antes daba UNA sola dos veces seguidas. No es el
+      // arnes: es que el dueno reconfigura sus propios pines dentro de su
+      // `sample`, y en paralelo las otras leen durante esa ventana en la que la
+      // linea no esta sostenida.
+      //
+      // El razonamiento de "el nivel se mantiene, asi que el desfase da igual"
+      // es cierto ENTRE las que solo escuchan, pero no incluye al que excita.
+      // Cualquier intento futuro de acelerar esto tiene que dejar fuera al
+      // dueno, y comprobarse contra una pieza de resultado conocido — la
+      // velocidad sin la comprobacion produce un tester rapido que miente.
       for (const u of units) {
         const m = await u.sample2(u === owner ? local : -1, level);
         if (!masks.has(u.index)) masks.set(u.index, {});
@@ -377,9 +410,10 @@ export async function barrer(units, onProgress) {
     //
     // La zona encendida sigue el avance del barrido, asi que el operador ve
     // por donde va sin mirar la pantalla.
-    if (src % 8 === 7) {
-      if (onProgress) onProgress(src + 1, n);
-      const zona = Math.min(LED_RANGOS - 1, Math.floor((src / n) * LED_RANGOS));
+    hechos++;
+    if (hechos % 8 === 0) {
+      if (onProgress) onProgress(hechos, n);
+      const zona = Math.min(LED_RANGOS - 1, Math.floor((hechos / n) * LED_RANGOS));
       const patron = LED_VERDE(zona);
       for (const u of units) await u.leds(patron);
     }

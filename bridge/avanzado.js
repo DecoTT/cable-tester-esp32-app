@@ -116,10 +116,23 @@ export async function onda(units, ga, gb, { ciclos = 2, porNivel = 10 } = {}) {
   } else if (sa.media > 2500 && sb.media < 400 && sa.sd < 50) {
     tipo = "unida";
     explicacion = "El extremo lejano sigue al excitador y no se mueve: contacto firme.";
+  } else if (sa.sd > 100 && sa.media > 2000) {
+    // MEDIDO: 3080 mV de media con 823 de desviacion. El acoplamiento no puede
+    // sostener un nivel asi — no hay camino de continua que lo alimente. Lo
+    // unico que produce media alta con desviacion alta es un contacto que se
+    // ABRE Y SE CIERRA mientras se mide.
+    //
+    // Distinguirlo del pin al aire importa porque la accion es opuesta: al
+    // aire significa "falta el hilo"; esto significa "el hilo esta y la union
+    // no retiene". Y es el defecto que un barrido digital aprueba o rechaza al
+    // azar segun el instante en que caiga la muestra.
+    tipo = "intermitente";
+    explicacion = `Llega a ${sa.media.toFixed(0)} mV pero vaga ${sa.sd.toFixed(0)} mV: el ` +
+                  "contacto se abre y se cierra mientras se mide. El hilo está; la unión no retiene.";
   } else if (sa.sd > 100) {
     tipo = "al_aire";
-    explicacion = `Vaga ${sa.sd.toFixed(0)} mV entre muestras. Un pin conectado no se mueve; ` +
-                  "esto es acoplamiento, o sea que el hilo NO llega.";
+    explicacion = `Vaga ${sa.sd.toFixed(0)} mV entre muestras y no llega a nivel ` +
+                  `(${sa.media.toFixed(0)} mV de media). Eso es acoplamiento del vecino: el hilo NO llega.`;
   } else if (sa.media < 500) {
     tipo = "abierta";
     explicacion = "El extremo lejano se queda a cero: el hilo no llega, o está pegado a masa.";

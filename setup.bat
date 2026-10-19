@@ -11,6 +11,42 @@ echo.
 cd /d "%~dp0"
 
 :: ===========================================================================
+::  [0/5]  Que esto sea de verdad una copia del proyecto
+:: ===========================================================================
+:: Dos formas de empezar mal que no dan un error entendible mas adelante, sino
+:: un fallo raro de npm veinte lineas despues.
+
+:: (a) Doble clic DENTRO del ZIP. Windows extrae el .bat solo, a una carpeta
+::     temporal, y lo ejecuta ahi: no hay package.json, npm instala 400 MB en
+::     un sitio que Windows borrara, y la app nunca aparece.
+echo %~dp0 | findstr /i /c:"\AppData\Local\Temp\\" >nul
+if not errorlevel 1 (
+    echo  [ERROR] Esto se esta ejecutando desde una carpeta temporal de Windows:
+    echo  %~dp0
+    echo.
+    echo  Pasa casi siempre por abrir el ZIP y hacer doble clic dentro.
+    echo  Windows extrae solo este fichero y lo tira al terminar.
+    echo.
+    echo  EXTRAE el ZIP entero a una carpeta de verdad, por ejemplo C:\CableTester32App,
+    echo  y ejecuta setup.bat desde ahi.
+    echo.
+    pause
+    exit /b 1
+)
+
+:: (b) Copia incompleta: sin package.json no hay nada que instalar.
+if not exist "package.json" (
+    echo  [ERROR] Aqui no hay package.json:
+    echo  %~dp0
+    echo.
+    echo  Esta carpeta no es la de la app, o la copia quedo incompleta.
+    echo  Tiene que contener package.json, bridge\ y src\.
+    echo.
+    pause
+    exit /b 1
+)
+
+:: ===========================================================================
 ::  [1/5]  Node
 :: ===========================================================================
 :: La app necesita Node 22.5 o superior porque usa node:sqlite, el SQLite
@@ -32,7 +68,7 @@ if /i "%INSTALLNODE%"=="n" goto :node_manual
 
 echo.
 echo  Descargando Node LTS...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }; $rel = (Invoke-RestMethod 'https://nodejs.org/dist/index.json') | Where-Object { $_.lts -ne $false } | Select-Object -First 1; $v = $rel.version; $name = ('node-{0}-win-{1}' -f $v, $arch); $zip = Join-Path $env:TEMP ($name + '.zip'); Invoke-WebRequest -Uri ('https://nodejs.org/dist/{0}/{1}.zip' -f $v, $name) -OutFile $zip -UseBasicParsing; if (Test-Path '.node-tmp') { Remove-Item '.node-tmp' -Recurse -Force }; if (Test-Path '.node') { Remove-Item '.node' -Recurse -Force }; Expand-Archive -Path $zip -DestinationPath '.node-tmp' -Force; Move-Item (Join-Path '.node-tmp' $name) '.node'; Remove-Item '.node-tmp' -Recurse -Force; Remove-Item $zip -Force; Write-Host ('  Node ' + $v + ' instalado en .node')"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }; $rel = (Invoke-RestMethod 'https://nodejs.org/dist/index.json') | Where-Object { $_.lts -ne $false } | Select-Object -First 1; $v = $rel.version; $name = ('node-{0}-win-{1}' -f $v, $arch); $zip = Join-Path $env:TEMP ($name + '.zip'); Invoke-WebRequest -Uri ('https://nodejs.org/dist/{0}/{1}.zip' -f $v, $name) -OutFile $zip -UseBasicParsing; if (Test-Path '.node-tmp') { Remove-Item '.node-tmp' -Recurse -Force }; if (Test-Path '.node') { Remove-Item '.node' -Recurse -Force }; Expand-Archive -Path $zip -DestinationPath '.node-tmp' -Force; Move-Item (Join-Path '.node-tmp' $name) '.node'; Remove-Item '.node-tmp' -Recurse -Force; Remove-Item $zip -Force; Write-Host ('  Node ' + $v + ' instalado en .node')"
 if errorlevel 1 goto :node_winget
 
 call :find_node
@@ -128,8 +164,8 @@ set "TOOLSDIR=%~dp0..\CableTester32"
 echo.
 echo  [4/5] Herramientas de linea de comandos (Python)...
 if not exist "%TOOLSDIR%\tools\requirements.txt" (
-    echo  No se encontro ..\CableTester32\tools -- se omite este paso.
-    echo  La app funciona sin el; solo faltaran el OTA y los scripts de medida.
+    echo  No estan en esta copia: es opcional y se omite.
+    echo  Son utilidades de taller; para producir no hacen falta.
     goto :verify
 )
 
@@ -206,7 +242,7 @@ echo  ===========================================================
 echo   Setup terminado.
 echo.
 echo   Para arrancar la app:
-echo     doble clic en  run.bat     (abre http://localhost:3001)
+echo     doble clic en  run.bat     (abre http://127.0.0.1:3001)
 echo.
 if exist "%TOOLSDIR%\.venv\Scripts\python.exe" (
     echo   Herramientas de linea de comandos:

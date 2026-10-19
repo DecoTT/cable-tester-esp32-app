@@ -51,11 +51,45 @@ rem vive en la base de datos y esta ventana no lo sabe: abre la direccion que
 rem imprima el bridge unas lineas mas abajo.
 if not defined PORT set "PORT=3001"
 
-rem El navegador se abre en otra ventana y con unos segundos de retraso, para
-rem que el bridge ya este escuchando cuando cargue la pagina.
-start "" cmd /c "timeout /t 3 >nul & start "" http://localhost:%PORT%/"
+rem Puerto ya ocupado: decirlo en cristiano.
+rem
+rem Si la ventana anterior se cerro sin Ctrl+C, el node puede seguir vivo y
+rem quedarse con el puerto. Sin esto, el arranque muere con un volcado de Node
+rem -EADDRINUSE y veinte lineas de pila- que no le dice nada a quien esta en
+rem planta, y ademas la ventana se cierra sola tras el mensaje.
+set "OCUPADO="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /c:"LISTENING" ^| findstr /c:":%PORT% "') do set "OCUPADO=%%P"
+if defined OCUPADO (
+    echo  [ERROR] El puerto %PORT% ya lo tiene el proceso !OCUPADO!.
+    echo.
+    echo  Lo normal es que la app ya este abierta en otra ventana. Usa esa.
+    echo.
+    echo  Si no es asi, quedo un proceso colgado. Para cerrarlo:
+    echo      taskkill /PID !OCUPADO! /F
+    echo.
+    echo  Y vuelve a ejecutar run.bat.
+    echo.
+    pause
+    exit /b 1
+)
 
-echo  Bridge + UI en http://localhost:%PORT%/
+rem El navegador se abre cuando el bridge RESPONDE, no a los N segundos.
+rem
+rem Antes eran 3 segundos fijos, y en el primer arranque pueden no llegar:
+rem abrir la base, crear las tablas y arrancar mDNS lleva mas en una maquina
+rem recien preparada.
+rem
+rem OJO: el 'localhost rechazo la conexion' que se veia NO era por esto. Era
+rem que 'localhost' resuelve primero a ::1 (IPv6) y el bridge solo escucha en
+rem 127.0.0.1. Por eso aqui se abre 127.0.0.1 y no localhost. La espera es una
+rem mejora aparte, para el arranque en frio.
+rem
+rem Se consulta la pagina de verdad, no solo si el puerto acepta conexiones:
+rem el puerto empieza a escuchar un instante antes de que haya nada servido.
+rem Hasta 60 s, y si no llega no se abre nada — el error se lee en esta ventana.
+start "" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$u='http://127.0.0.1:%PORT%/'; for($i=0; $i -lt 120; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing -Uri $u -TimeoutSec 2; if ($r.StatusCode -eq 200) { Start-Process $u; exit } } catch { }; Start-Sleep -Milliseconds 500 }"
+
+echo  Bridge + UI en http://127.0.0.1:%PORT%/
 echo  Para cerrar la app: Ctrl+C en esta ventana, o cierrala.
 echo.
 

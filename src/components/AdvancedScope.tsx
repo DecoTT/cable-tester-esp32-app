@@ -35,8 +35,9 @@ import { useToast } from "@/hooks/use-toast";
 // una prueba suelta dé bien.
 
 const COLOR: Record<string, string> = {
-  unida:      "#16a34a",
-  resistiva:  "#d97706",
+  unida:        "#16a34a",
+  intermitente: "#c026d3",   // ni verde ni rojo: es su propia categoría
+  resistiva:    "#d97706",
   al_aire:    "#dc2626",
   abierta:    "#dc2626",
   error:      "#64748b",
@@ -44,7 +45,7 @@ const COLOR: Record<string, string> = {
 };
 
 const ETIQUETA: Record<string, string> = {
-  unida: "UNIDA", resistiva: "RESISTIVA", al_aire: "AL AIRE",
+  unida: "UNIDA", intermitente: "INTERMITENTE", resistiva: "RESISTIVA", al_aire: "AL AIRE",
   abierta: "ABIERTA", error: "ERROR", indefinido: "?",
 };
 
@@ -339,7 +340,17 @@ export default function AdvancedScope({ sku }: { sku: string }) {
             <Card key={i} className="overflow-hidden">
               <CardHeader className="py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base font-mono">{l.a} → {l.b}</CardTitle>
+                  {/* Delante el nombre FISICO: es al que se puede ir con la mano.
+                      El interno se queda debajo porque al depurar hay que poder
+                      cruzarlo con el esquematico del tester. */}
+                  <CardTitle className="text-base font-mono">
+                    {l.fisico_a && l.fisico_b
+                      ? <>
+                          {l.fisico_a} → {l.fisico_b}
+                          <span className="block text-xs font-normal text-slate-400">{l.a} → {l.b}</span>
+                        </>
+                      : <>{l.a} → {l.b}</>}
+                  </CardTitle>
                   <Badge style={{ backgroundColor: COLOR[l.tipo] }} className="text-white">
                     {ETIQUETA[l.tipo]}
                   </Badge>
@@ -370,7 +381,13 @@ export default function AdvancedScope({ sku }: { sku: string }) {
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="text-base font-mono">
-              {detalle.a} → {detalle.b}
+              {(() => {
+                const f = lineas?.find((x) => x.a === detalle.a && x.b === detalle.b);
+                return f?.fisico_a && f?.fisico_b
+                  ? <>{f.fisico_a} → {f.fisico_b}
+                      <span className="ml-2 text-xs font-normal text-slate-400">{detalle.a} → {detalle.b}</span></>
+                  : <>{detalle.a} → {detalle.b}</>;
+              })()}
               <span className="ml-2 text-xs font-sans font-normal text-gray-500">
                 fondo gris = excitador en ALTO
               </span>

@@ -24,7 +24,7 @@ En una PC de producción, sin tocar nada más:
 
 ```
 setup.bat     # una vez: instala Node si falta, dependencias, compila la UI
-run.bat       # cada día: bridge + UI y abre http://localhost:3001
+run.bat       # cada día: bridge + UI y abre http://127.0.0.1:3001
 ```
 
 `setup.bat` no necesita permisos de administrador: si el equipo no tiene un
@@ -37,7 +37,7 @@ A mano, si ya tienes el entorno montado:
 ```bash
 npm install
 npm run build     # compila la UI
-npm start         # bridge + UI en http://localhost:3001
+npm start         # bridge + UI en http://127.0.0.1:3001
 ```
 
 **Desarrollo** (recarga en caliente):

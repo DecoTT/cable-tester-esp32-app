@@ -91,7 +91,9 @@ export function registerMedidaRoutes(app, io) {
     if (!exigirUnidades(res)) return;
     const fixture = req.body?.fixture ? cargarFixture(req.body.fixture) : null;
     const conn = await barrer(vivo.units, (hecho, total) =>
-      emit("medida:progreso", { fase: "barrido", hecho, total }));
+      emit("medida:progreso", { fase: "barrido", hecho, total }),
+      { invertido: !!req.body?.invertido,
+        settleUs: req.body?.settle_us == null ? 1000 : Number(req.body.settle_us) });
     const n = totalCanales(vivo.units);
     const { nets, aislados } = construirNets(conn, n);
     res.json({
@@ -167,7 +169,14 @@ export function registerMedidaRoutes(app, io) {
       nombre,
       creado: new Date().toISOString(),
       fixture: fixId ?? null,
-      unidades: vivo.units.map((u) => ({ host: u.host, canales: u.n })),
+      // MAC ademas de IP. La IP es una foto del dia que se capturo: la reparte
+      // el DHCP y cambia sola. Un golden atado a IPs sigue pareciendo correcto
+      // el dia que el router reparte distinto, y lo unico que se nota es que
+      // los informes senalan el conector equivocado.
+      unidades: vivo.units.map((u) => {
+        const r = db.prepare("SELECT mac, unit FROM tester_units WHERE ip = ?").get(u.host);
+        return { host: u.host, canales: u.n, mac: r?.mac ?? null, unit: r?.unit ?? null };
+      }),
       total_canales: n,
       esperadas: esperadas != null ? Number(esperadas) : null,
       huella: huella(nets, aislados, vivo.units),
@@ -342,7 +351,10 @@ export function registerMedidaRoutes(app, io) {
                        status, captured_at, approved_by, approved_at,
                        hosts, esperadas, huella, golden)
       VALUES(?,?,?,?,?,?,?,'approved',?,?,?,?,?,?,?)
-    `).run(sku, nombre ?? gname, g.total_canales, bytes, g.nets.length, 0, "[]",
+    `).run(sku, nombre ?? gname, g.total_canales, bytes, g.nets.length, 0,
+           // Las MACs del golden, en su ORDEN: es lo que identifica de verdad
+           // a las unidades. Los hosts se guardan igual, pero como pista.
+           JSON.stringify(g.unidades.map((u) => u.mac).filter(Boolean)),
            g.creado, aprobado_por ?? null, now(),
            JSON.stringify(g.unidades.map((u) => u.host)),
            g.esperadas ?? null, g.huella, gname);

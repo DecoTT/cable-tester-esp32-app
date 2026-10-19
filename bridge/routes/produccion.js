@@ -14,6 +14,7 @@ import {
   ledsDeFallos, clasificarAislado, validarModulos,
 } from "../measure.js";
 import { cargarFixture, nombreFisico, describirLinea } from "../fixture.js";
+import { hostsDeJob, mensajeFaltan } from "../hosts.js";
 import { DATA_DIR, audit, db, now, todayYMD, nextLoteId, getSetting, setSetting } from "../db.js";
 import { etiquetasDeLote, historialEtiquetas, etiquetarPacksCompletos } from "../labels/lote.js";
 import { onda, acoplamiento } from "../avanzado.js";
@@ -72,7 +73,9 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
     return true;
   };
   const soltar = (hosts) => { for (const h of hosts) ocupadas.delete(h); };
-  const hostsDelJob = (job) => { try { return JSON.parse(job.hosts || "[]"); } catch { return []; } };
+  // Las unidades del job se resuelven POR MAC: la IP guardada es de la red en
+  // la que se capturo el golden y en otra planta no vale (ver bridge/hosts.js).
+  const hostsDelJob = (job) => hostsDeJob(job, discovery).hosts;
 
   /**
    * La prueba de produccion, una sola vez y en un solo sitio.
@@ -98,8 +101,13 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
     ).get(sku);
     if (!job) fallar(404, `${sku} no tiene ningún golden aprobado`);
 
-    const hosts = JSON.parse(job.hosts || "[]");
-    if (!hosts.length) fallar(422, "el job no guardó las unidades; recaptura el golden");
+    const { hosts, faltan, porMac } = hostsDeJob(job, discovery);
+    if (faltan.length) fallar(422, mensajeFaltan(faltan));
+    if (!hosts.length) {
+      fallar(422, porMac
+        ? "el job no guardó las unidades; recaptura el golden"
+        : "este job guarda las unidades por IP y ninguna responde; recaptura el golden para que queden por MAC");
+    }
 
     const t0 = Date.now();
     const inicio = now();
@@ -376,7 +384,8 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
 
       const job = db.prepare("SELECT * FROM jobs WHERE id = ?").get(prueba.job_id);
       if (!job) return res.status(404).json({ error: "la prueba no tiene job" });
-      const hosts = JSON.parse(job.hosts || "[]");
+      const { hosts, faltan } = hostsDeJob(job, discovery);
+      if (faltan.length) return res.status(422).json({ error: mensajeFaltan(faltan) });
       if (!hosts.length) return res.status(422).json({ error: "el job no guardó las unidades" });
       if (!tomar(hosts)) return res.status(409).json({ error: "ese equipo está ocupado" });
       reservados = hosts;
@@ -537,6 +546,284 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   const vigilancia = new Map();   // mac -> { presses, host, proximo }
   let sondeando = false;
 
+  // ── Ordenar los equipos pulsando su boton ──────────────────
+  //
+  // El orden de montaje (M, L1, L2) define los nombres de canal, asi que
+  // elegirlo mal no da ningun error: simplemente hace que los informes
+  // senalen el conector equivocado. Y elegirlo bien desde la pantalla exige
+  // saber que caja es "424C", que nadie sabe mientras no haya etiquetas.
+  //
+  // Asi que se ordena tocando el hardware: se pulsa el boton de la caja que va
+  // en M, luego el de L1, luego el de L2. El orden de las pulsaciones ES el
+  // orden del montaje, y no hay nada que recordar ni que traducir.
+  //
+  // Mientras la captura esta abierta las pulsaciones NO lanzan prueba: las
+  // consume esto. Es posible porque la pulsacion no la ejecuta el ESP32 — el
+  // firmware solo cuenta, y quien decide que hacer es la PC. Con el disparador
+  // en modo "local" el ESP32 se lanza solo y esto no puede intervenir, asi que
+  // se avisa al abrir la captura.
+  // Con la punta en vez del boton: las child no llevan boton soldado, y los dos
+  // pulsadores del modulo no sirven (SW2 es el reset; SW1 cuelga de IO9, que es
+  // SDA del I2C). Pero durante el recorrido de socket la punta de 3,3 V ya esta
+  // en la mano: se toca un pin cualquiera del socket de la caja que va en M,
+  // luego el de L1, luego el de L2. La caja que ve tension es la que se toco.
+  //
+  // Esto exige el ARNES DESCONECTADO. Con el arnes puesto, tocar un pin de M
+  // levanta tambien canales de L1 — que es justo para lo que sirve el arnes — y
+  // el orden seria una moneda al aire. Por eso, si dos unidades se levantan en
+  // la misma vuelta, no se apunta ninguna y se dice por que.
+  let captura = null;   // { hasta, modo, unidades: [{unit, mac, ip}], aviso, choque }
+
+  const capturaViva = () => (captura && Date.now() < captura.hasta ? captura : null);
+
+  app.post("/api/testers/orden/capturar", async (req, res) => {
+    const segundos = Math.min(300, Math.max(10, Number(req.body?.segundos) || 90));
+    const modo = req.body?.modo === "punta" ? "punta" : "boton";
+    captura = { hasta: Date.now() + segundos * 1000, modo, unidades: [], aviso: null, choque: null };
+
+    if (modo === "punta") {
+      emit("orden:captura", { abierta: true, segundos, modo });
+      return res.json({ ok: true, segundos, modo, aviso: null });
+    }
+
+    // Modo "reset": se pulsa SW2, que es el reset por hardware del modulo. La
+    // caja que arranque de nuevo es la que se pulso, y eso se ve desde aqui
+    // porque el uptime vuelve a cero. Es el UNICO orden por hardware que
+    // funciona en una placa sin cablear: el boton de disparo (IO4) hay que
+    // soldarlo, y SW1 no se puede tocar porque cuelga de IO9, que es SDA.
+    //
+    // Cuesta un arranque por caja (~10 s hasta que vuelve a la red). Para
+    // identificarlas una vez y etiquetarlas, sale barato.
+    if (modo === "reset") {
+      captura.base = new Map();
+      for (const u of db.prepare("SELECT mac, unit, ip FROM tester_units").all()) {
+        const host = discovery?.list().find((d) => d.unit === u.unit)?.ip || u.ip;
+        if (!host) continue;
+        try {
+          const st = await (await fetch(`http://${host}/api/status`,
+            { signal: AbortSignal.timeout(1500) })).json();
+          if (st?.uptime_s != null) captura.base.set(u.mac, st.uptime_s);
+        } catch { /* apagada: si aparece luego, no se cuenta como reset */ }
+      }
+      // Una caja recien encendida arranca con el uptime bajo, pero eso NO es una
+      // pulsacion: la referencia se toma AHORA, y solo cuenta lo que baje desde
+      // aqui. Sin esto, reconectar una y pulsar otra dan el mismo resultado.
+      emit("orden:captura", { abierta: true, segundos, modo });
+      return res.json({
+        ok: true, segundos, modo,
+        aviso: captura.base.size < 2
+          ? "Solo veo " + captura.base.size + " equipo en la red: enciende los demas antes de ordenar."
+          : null,
+      });
+    }
+
+    // Un equipo en modo "local" se lanzaria a probar en cuanto se pulse. Se
+    // dice ANTES, no despues de que alguien se lleve el susto.
+    const locales = [];
+    for (const u of db.prepare("SELECT mac, unit, ip FROM tester_units").all()) {
+      const host = discovery?.list().find((d) => d.unit === u.unit)?.ip || u.ip;
+      if (!host) continue;
+      try {
+        const r = await fetch(`http://${host}/api/status`, { signal: AbortSignal.timeout(1500) });
+        const st = await r.json();
+        if (st?.trigger?.mode === "local") locales.push(st.unit || u.unit);
+      } catch { /* apagado: ya se vera cuando se pulse */ }
+    }
+    if (locales.length) {
+      captura.aviso = `${locales.join(", ")} tiene el disparador en modo "local": ` +
+        "al pulsarlo va a probar por su cuenta. Pasalo a \"avisar\" para ordenarlo con el boton.";
+    }
+
+    emit("orden:captura", { abierta: true, segundos, modo });
+    res.json({ ok: true, segundos, modo, aviso: captura.aviso });
+  });
+
+  /**
+   * "¿Esta cual es?" — para pegar las etiquetas.
+   *
+   * No ordena nada: se pulsa SW2 en una caja cualquiera y contesta quien es.
+   * Es lo que hace falta con tres cajas iguales delante y tres etiquetas
+   * impresas en la mano.
+   *
+   * Bloquea hasta que alguna se reinicie, o hasta que se agote la espera. El
+   * cliente lo llama y se queda esperando; no hay que sondear nada.
+   */
+  app.get("/api/testers/quien-es", async (req, res) => {
+    const limite = Date.now() + Math.min(120, Math.max(5, Number(req.query.segundos) || 60)) * 1000;
+
+    // Registradas Y vistas por mDNS. Una caja recien sacada de la caja aparece
+    // en la red antes de estar registrada, y es justo la que hay que etiquetar:
+    // mirar solo la tabla dejaba fuera el caso que mas importa.
+    const candidatas = () => {
+      const m = new Map();   // clave: unit, para no contarla dos veces
+      for (const u of db.prepare("SELECT mac, unit, ip FROM tester_units").all()) {
+        m.set(u.unit, { mac: u.mac, unit: u.unit, ip: u.ip, registrada: true });
+      }
+      for (const d of discovery?.list() ?? []) {
+        const prev = m.get(d.unit);
+        // El mDNS trae la IP de AHORA: manda sobre la guardada.
+        if (prev) prev.ip = d.ip || prev.ip;
+        else m.set(d.unit, { mac: null, unit: d.unit, ip: d.ip, registrada: false });
+      }
+      return [...m.values()];
+    };
+
+    const leer = async () => {
+      const m = new Map();
+      for (const u of candidatas()) {
+        const host = u.ip;
+        if (!host) continue;
+        try {
+          const st = await (await fetch(`http://${host}/api/status`,
+            { signal: AbortSignal.timeout(1500) })).json();
+          if (st?.uptime_s != null)
+            m.set(u.unit, { up: st.uptime_s, unit: u.unit, host,
+                            mac: st.mac || u.mac, registrada: u.registrada });
+        } catch { /* fuera de red */ }
+      }
+      return m;
+    };
+
+    const base = await leer();
+    if (!base.size) return res.json({ ok: false, error: "no veo ningun equipo en la red" });
+
+    while (Date.now() < limite) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const ahora = await leer();
+      for (const [unit, v] of ahora) {
+        const prev = base.get(unit);
+        if (prev && v.up < prev.up - 1) {
+          await acusarRecibo(v.host, 2);
+          return res.json({
+            ok: true, mac: v.mac, unidad: v.unit, ip: v.host, registrada: v.registrada,
+          });
+        }
+        if (prev) prev.up = v.up; else base.set(unit, v);
+      }
+    }
+    res.json({ ok: false, error: "nadie pulso SW2" });
+  });
+
+  app.get("/api/testers/orden", (_req, res) => {
+    const c = capturaViva();
+    res.json({
+      ok: true,
+      capturando: !!c,
+      modo: c?.modo ?? null,
+      resta: c ? Math.max(0, Math.round((c.hasta - Date.now()) / 1000)) : 0,
+      aviso: c?.aviso ?? null,
+      choque: c?.choque ?? null,
+      unidades: (captura?.unidades ?? []).map((u, i) => ({
+        ...u, posicion: i === 0 ? "M" : `L${i}`,
+      })),
+    });
+  });
+
+  app.delete("/api/testers/orden", (_req, res) => {
+    captura = null;
+    emit("orden:captura", { abierta: false });
+    res.json({ ok: true });
+  });
+
+  // Confirmacion en el propio equipo: destella su numero de posicion. Sin
+  // esto no se distingue "no conto mi pulsacion" de "la conto y la pantalla
+  // no se ha refrescado", que es justo la duda que hace pulsar dos veces.
+  // Vigilante de la punta. Solo corre mientras hay captura en modo "punta":
+  // el resto del tiempo nadie pregunta nada a nadie.
+  let mirandoPunta = false;
+  async function sondearPunta() {
+    const c = capturaViva();
+    if (!c || c.modo !== "punta" || mirandoPunta) return;
+    mirandoPunta = true;
+    try {
+      const vivas = db.prepare("SELECT mac, unit, ip FROM tester_units").all();
+      const altas = [];
+      for (const u of vivas) {
+        if (c.unidades.some((x) => x.mac === u.mac)) continue;
+        const host = discovery?.list().find((d) => d.unit === u.unit)?.ip || u.ip;
+        if (!host) continue;
+        try {
+          const r = await fetch(`http://${host}/api/raw`, {
+            method: "POST", headers: { "Content-Type": "text/plain" },
+            // Doble lectura y AND, igual que escuchar(): una sola muestra da
+            // fantasmas por acoplamiento y aqui bastaria uno para desordenar.
+            body: "sample 0 1\nsample 0 1", signal: AbortSignal.timeout(2000),
+          });
+          // La respuesta es {api,n,results:[...]}, no un array pelado.
+          const v = (await r.json())?.results ?? [];
+          const m = ((v[0] ?? 0) >>> 0) & ((v[1] ?? 0) >>> 0);
+          if (m) altas.push({ mac: u.mac, unit: u.unit, ip: host });
+        } catch { /* apagada o fuera de red */ }
+      }
+
+      if (altas.length > 1) {
+        c.choque = `${altas.map((a) => a.unit).join(" y ")} ven tensión a la vez. ` +
+          "Con el arnés puesto, tocar una levanta canales de la otra: desconéctalo para ordenar.";
+        return;
+      }
+      c.choque = null;
+      if (altas.length === 1) {
+        c.unidades.push(altas[0]);
+        const pos = c.unidades.length;
+        console.log(`[orden] ${altas[0].unit} (punta) -> ${pos === 1 ? "M" : "L" + (pos - 1)}`);
+        emit("orden:pulsado", { unidad: altas[0].unit, ip: altas[0].ip, posicion: pos });
+        await acusarRecibo(altas[0].ip, pos);
+      }
+    } finally {
+      mirandoPunta = false;
+    }
+  }
+  setInterval(sondearPunta, 300);
+
+  // Vigilante del reset (modo "reset"). Un uptime que BAJA es un arranque; que
+  // suba es lo normal. No hace falta distinguir el motivo del reset: en el
+  // ESP32-C3 un reset por EN se reporta igual que un encendido, asi que lo que
+  // discrimina es la referencia tomada al abrir la captura, no el motivo.
+  let mirandoReset = false;
+  async function sondearReset() {
+    const c = capturaViva();
+    if (!c || c.modo !== "reset" || mirandoReset) return;
+    mirandoReset = true;
+    try {
+      for (const u of db.prepare("SELECT mac, unit, ip FROM tester_units").all()) {
+        if (c.unidades.some((x) => x.mac === u.mac)) continue;
+        const prev = c.base.get(u.mac);
+        if (prev == null) continue;           // no estaba en la red al empezar
+        const host = discovery?.list().find((d) => d.unit === u.unit)?.ip || u.ip;
+        if (!host) continue;
+        let up;
+        try {
+          up = (await (await fetch(`http://${host}/api/status`,
+            { signal: AbortSignal.timeout(1500) })).json())?.uptime_s;
+        } catch { continue; }                 // reiniciando: aun no responde
+        if (up == null) continue;
+        if (up < prev - 1) {
+          c.unidades.push({ mac: u.mac, unit: u.unit, ip: host });
+          const pos = c.unidades.length;
+          console.log(`[orden] ${u.unit} (reset) -> ${pos === 1 ? "M" : "L" + (pos - 1)}`);
+          emit("orden:pulsado", { unidad: u.unit, ip: host, posicion: pos });
+          await acusarRecibo(host, pos);
+        } else {
+          c.base.set(u.mac, up);
+        }
+      }
+    } finally {
+      mirandoReset = false;
+    }
+  }
+  setInterval(sondearReset, 1200);
+
+  async function acusarRecibo(host, veces) {
+    const leds = (v) => fetch(`http://${host}/api/raw`, {
+      method: "POST", headers: { "Content-Type": "text/plain" },
+      body: `leds ${v}`, signal: AbortSignal.timeout(1500),
+    }).catch(() => {});
+    for (let k = 0; k < veces; k++) {
+      await leds(1023); await new Promise((r) => setTimeout(r, 120));
+      await leds(0);    await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+
   // Un equipo SIN disparador, o apagado, no merece que se le pregunte tres
   // veces por segundo: se le espacia a 10 s. Sin esto, cuatro unidades de las
   // cuales tres estan apagadas convierten cada vuelta en 7 s de timeouts y el
@@ -580,6 +867,19 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         // La primera vuelta solo toma nota. Sin esto, arrancar el bridge con un
         // contador ya alto dispararía una prueba que nadie pidió.
         if (prev?.presses == null || t.presses === prev.presses) continue;
+
+        // Captura de orden abierta: la pulsacion ordena, no prueba.
+        const cap = capturaViva();
+        if (cap) {
+          if (!cap.unidades.some((x) => x.mac === u.mac)) {
+            cap.unidades.push({ mac: u.mac, unit: st.unit || u.unit, ip: host });
+            const pos = cap.unidades.length;
+            console.log(`[orden] ${st.unit} -> posicion ${pos === 1 ? "M" : "L" + (pos - 1)}`);
+            emit("orden:pulsado", { unidad: st.unit || u.unit, ip: host, posicion: pos });
+            acusarRecibo(host, pos);
+          }
+          continue;
+        }
 
         const decision = resolverBoton(u.mac, host);
         if (!decision.job) {
@@ -638,6 +938,98 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   } else {
     setInterval(sondearBotones, 400);
   }
+
+  // ── Identificar un pin con la punta ────────────────────────
+  //
+  // El recorrido de socket va al derecho: "abre CN13 y ve tocando sus pines".
+  // Esto va al reves: se toca un pin cualquiera y contesta cual es.
+  //
+  // Hace falta porque los numeros de pin NO son una serigrafia: son el orden en
+  // que se recorrio el conector al mapear. "CN13.7" quiere decir "el septimo
+  // que toque en CN13", y eso no se puede deducir mirando la pieza. Cuando la
+  // prueba dice ABIERTO CN9.4 <-> CN13.7, hay que poder volver del nombre al
+  // metal, y la unica traduccion fiable es la misma que lo creo: la punta.
+  //
+  // Se queda abierto y va mostrando lo ultimo: se toca un pin, otro, otro.
+  let ident = null;   // { hasta, units:[{host,idx}], fixture, actual:[], ultimo, historial:[] }
+
+  const identViva = () => (ident && Date.now() < ident.hasta ? ident : null);
+
+  const nombrePin = (g, fixture) => {
+    const u = Math.floor(g / 32), b = g % 32;
+    const interno = `${u === 0 ? "M" : `L${u}`}.${b === 31 ? "J_SP" : `J${String(b).padStart(2, "0")}`}`;
+    const e = fixture?.mapa?.[interno];
+    return { interno, fisico: e ? `${e.conector}.${e.pin}` : null,
+             conector: e?.conector ?? null, pin: e?.pin ?? null };
+  };
+
+  app.post("/api/socket/identificar/abrir", (req, res) => {
+    const { fixture: fixId, minutos = 15 } = req.body ?? {};
+    const fx = fixId ? cargarFixture(fixId) : null;
+    if (!fx) return res.status(400).json({ ok: false, error: "hace falta un fixture para traducir" });
+
+    // El fixture ya resuelve sus unidades POR MAC al cargarse, asi que estos
+    // hosts son los de ahora aunque el DHCP los haya movido.
+    ident = {
+      hasta: Date.now() + Math.min(60, Math.max(1, Number(minutos))) * 60000,
+      hosts: fx.unidades.map((u) => u.host),
+      fixture: fx, actual: [], ultimo: null, historial: [],
+    };
+    res.json({ ok: true, fixture: fixId, avisos: fx.avisos ?? [],
+               unidades: fx.unidades.map((u, i) => ({ pos: i === 0 ? "M" : `L${i}`, unit: u.unit, host: u.host })) });
+  });
+
+  app.get("/api/socket/identificar", (_req, res) => {
+    const s = identViva();
+    res.json({
+      ok: true, activa: !!s,
+      actual: s?.actual ?? [],
+      ultimo: ident?.ultimo ?? null,
+      historial: (ident?.historial ?? []).slice(0, 12),
+    });
+  });
+
+  app.post("/api/socket/identificar/cerrar", (_req, res) => { ident = null; res.json({ ok: true }); });
+
+  let mirandoIdent = false;
+  async function sondearIdent() {
+    const s = identViva();
+    if (!s || mirandoIdent) return;
+    mirandoIdent = true;
+    try {
+      const altos = [];
+      for (let i = 0; i < s.hosts.length; i++) {
+        try {
+          const r = await fetch(`http://${s.hosts[i]}/api/raw`, {
+            method: "POST", headers: { "Content-Type": "text/plain" },
+            // Doble muestra y AND: con una sola, un vecino acoplado se cuela y
+            // diria un pin que no es. Aqui eso manda a alguien al pin equivocado.
+            body: "sample 0 1\nsample 0 1", signal: AbortSignal.timeout(1500),
+          });
+          const v = (await r.json())?.results ?? [];
+          const m = ((v[0] ?? 0) >>> 0) & ((v[1] ?? 0) >>> 0);
+          for (let b = 0; b < 32; b++) if ((m >>> b) & 1) altos.push(i * 32 + b);
+        } catch { /* una caida no puede parar a las demas */ }
+      }
+
+      const nombres = altos.map((g) => nombrePin(g, s.fixture));
+      s.actual = nombres;
+
+      // Solo se anota al APARECER. Con la punta apoyada, anotar en cada vuelta
+      // llenaria el historial del mismo pin y taparia el anterior.
+      const clave = nombres.map((n) => n.fisico ?? n.interno).sort().join("+");
+      if (clave && clave !== s._ultimaClave) {
+        s.ultimo = { pines: nombres, cuando: new Date().toISOString(), varios: nombres.length > 1 };
+        s.historial.unshift(s.ultimo);
+        s.historial = s.historial.slice(0, 30);
+        emit("socket:identificado", s.ultimo);
+      }
+      if (clave !== s._ultimaClave) s._ultimaClave = clave;
+    } finally {
+      mirandoIdent = false;
+    }
+  }
+  setInterval(sondearIdent, 250);
 
   // ── Estaciones ─────────────────────────────────────────────
   //
@@ -740,7 +1132,10 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
    * El ORDEN de los hosts sigue importando, tambien aqui: define los nombres
    * de canal (M, L1, L2). Se respeta el que llegue.
    */
-  const conUnidades = async ({ sku, hosts: hostsPedidos }, fn, res) => {
+  // `fixture` permite traducir a conector y pin AUNQUE se trabaje con equipos
+  // sueltos, sin SKU. Sin esto, la vista avanzada solo sabe decir "M.J04", que
+  // es justo lo que nadie puede localizar en la pieza.
+  const conUnidades = async ({ sku, hosts: hostsPedidos, fixture: fixPedido }, fn, res) => {
     let units = null;
     let reservados = [];
     try {
@@ -753,7 +1148,9 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
           "SELECT * FROM jobs WHERE sku = ? AND status = 'approved' ORDER BY approved_at DESC LIMIT 1"
         ).get(sku);
         if (!job) return res.status(404).json({ error: `${sku} no tiene ningún golden aprobado` });
-        hosts = JSON.parse(job.hosts || "[]");
+        const r = hostsDeJob(job, discovery);
+        if (r.faltan.length) return res.status(422).json({ error: mensajeFaltan(r.faltan) });
+        hosts = r.hosts;
         if (!hosts.length) return res.status(422).json({ error: "el job no guardó las unidades" });
       }
 
@@ -771,6 +1168,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         g = fs.existsSync(gp) ? JSON.parse(fs.readFileSync(gp, "utf8")) : null;
         fixture = g?.fixture ? cargarFixture(g.fixture) : null;
       }
+      if (fixPedido) fixture = cargarFixture(fixPedido) ?? fixture;
 
       await fn({ units, n, job, golden: g, fixture, res });
     } catch (e) {
@@ -797,8 +1195,8 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
 
   // Todas las lineas del golden, una tras otra.
   app.post("/api/avanzado/lineas", (req, res) => {
-    const { sku, hosts } = req.body ?? {};
-    conUnidades({ sku, hosts }, async ({ units, golden, res: r }) => {
+    const { sku, hosts, fixture: fixId } = req.body ?? {};
+    conUnidades({ sku, hosts, fixture: fixId }, async ({ units, golden, fixture, res: r }) => {
       const n = totalCanales(units);
       const idx = new Map();
       for (let i = 0; i < n; i++) idx.set(chName(i, units), i);
@@ -822,8 +1220,15 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         const ga = idx.get(na), gb = idx.get(nb);
         if (ga == null || gb == null) continue;
         const o = await onda(units, ga, gb, { ciclos: 2, porNivel: 8 });
+        // El nombre interno NO se quita: al depurar hace falta cruzarlo con el
+        // esquematico del tester. Pero delante va el fisico, que es al que se
+        // puede ir con la mano.
+        const fa = nombreFisico(ga, units, fixture), fb = nombreFisico(gb, units, fixture);
         lineas.push({
           a: o.a, b: o.b, ga, gb,
+          fisico_a: fa.fisico, fisico_b: fb.fisico,
+          conector_a: fa.conector ?? null, pin_a: fa.pin ?? null,
+          conector_b: fb.conector ?? null, pin_b: fb.pin ?? null,
           alto: o.alto, bajo: o.bajo, tipo: o.tipo, explicacion: o.explicacion,
           traza: o.muestras.map((m) => ({ t: m.t, mv: m.mv, nivel: m.nivel })),
         });

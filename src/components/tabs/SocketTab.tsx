@@ -8,9 +8,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Play, Square, Undo2, Save, Volume2, VolumeX, CircleCheck, TriangleAlert } from "lucide-react";
+import { Play, Square, Undo2, Save, Volume2, VolumeX, CircleCheck, TriangleAlert, Lightbulb, Hand } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { api, liveSocket, type EventoSocket, type FixtureInfo } from "@/services/api";
+import { api, liveSocket, type EventoSocket, type FixtureInfo, type PinIdent } from "@/services/api";
 import { useToast } from "@/hooks/use-toast";
 
 // Validación de socket y aprendizaje del fixture.
@@ -55,6 +55,11 @@ function usePitido() {
   return {
     activo, setActivo,
     ok:    () => pitar(1320, 90),    // pin nuevo detectado
+    // Identificar: un pin da un tono claro; varios a la vez, dos tonos graves.
+    // Si sonaran igual, el aviso de "la punta toca dos" se perderia justo
+    // cuando el operador no esta mirando la pantalla, que es siempre.
+    ident: () => pitar(1050, 80),
+    varios: () => { pitar(500, 70); setTimeout(() => pitar(400, 90), 80); },
     fin:   () => { pitar(880, 120); setTimeout(() => pitar(1320, 160), 140); },
     error: () => { pitar(220, 180); setTimeout(() => pitar(180, 260), 190); },
   };
@@ -117,8 +122,111 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
     } catch { /* job sin hosts: se eligen a mano */ }
   }, [sku, jobs.data]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Identificar un pin con la punta ──────────────────────────────────
+  //
+  // Es el recorrido al reves: en vez de "abre CN13 y ve tocando", se toca lo
+  // que sea y la app dice cual es. Hace falta porque los numeros de pin son el
+  // ORDEN en que se mapeo el conector, no algo que se pueda leer en la pieza:
+  // cuando la prueba dice ABIERTO CN9.4 <-> CN13.7, no hay forma de saber que
+  // metal es sin volver a tocarlo.
+  const [identOn, setIdentOn] = useState(false);
+  const [identFx, setIdentFx] = useState("");
+  const [ultimo, setUltimo] = useState<{ pines: PinIdent[]; cuando: string; varios: boolean } | null>(null);
+  const [tocando, setTocando] = useState<PinIdent[]>([]);
+  const [histIdent, setHistIdent] = useState<{ pines: PinIdent[]; cuando: string; varios: boolean }[]>([]);
+  const ultimaClave = useRef("");
+
+  useEffect(() => {
+    if (!identOn) return;
+    const t = setInterval(async () => {
+      try {
+        const d = await api.socket.identEstado();
+        // Pita al APARECER, no mientras la punta sigue apoyada: un pitido
+        // continuo no informa de nada y en una jornada entera es insufrible.
+        const clave = d.actual.map((p) => p.fisico ?? p.interno).sort().join("+");
+        if (clave && clave !== ultimaClave.current) {
+          if (d.actual.length > 1) pito.varios(); else pito.ident();
+        }
+        ultimaClave.current = clave;
+        setTocando(d.actual); setUltimo(d.ultimo); setHistIdent(d.historial);
+        if (!d.activa) setIdentOn(false);
+      } catch { /* el bridge se reinicio */ }
+    }, 300);
+    return () => clearInterval(t);
+  }, [identOn]);
+
+  const abrirIdent = async () => {
+    const fx = identFx || fixtureId;
+    if (!fx) return toast({ title: "Elige el fixture", description: "Hace falta para traducir el canal a conector y pin.", variant: "destructive" });
+    try {
+      const d = await api.socket.identAbrir(fx, 15);
+      setIdentOn(true); setUltimo(null); setTocando([]); setHistIdent([]);
+      ultimaClave.current = "";
+      if (d.avisos?.length) toast({ title: "Aviso del fixture", description: d.avisos.join(" · ") });
+    } catch (e: any) {
+      toast({ title: "No se pudo abrir", description: String(e?.message ?? e), variant: "destructive" });
+    }
+  };
+
+  const cerrarIdent = async () => { setIdentOn(false); await api.socket.identCerrar().catch(() => {}); };
+
   const alternar = (ip: string) =>
     setEquipos((x) => x.includes(ip) ? x.filter((y) => y !== ip) : [...x, ip]);
+
+  // ── Ordenar pulsando el boton de cada caja ───────────────────────────
+  //
+  // Elegir el orden desde la pantalla obliga a saber que caja es "424C", y
+  // nadie lo sabe mientras no haya etiquetas pegadas. Pulsando el boton de la
+  // que va en M, luego la de L1, luego la de L2, el orden sale del hardware:
+  // no hay nada que recordar. El equipo destella su numero de posicion para
+  // que no haya que fiarse de la pantalla.
+  const [capturando, setCapturando] = useState(false);
+  const [resta, setResta] = useState(0);
+  const [pulsadas, setPulsadas] = useState<{ unit: string; posicion: string }[]>([]);
+  const [modoOrden, setModoOrden] = useState<"boton" | "punta" | "reset">("reset");
+  const [choque, setChoque] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!capturando) return;
+    const t = setInterval(async () => {
+      try {
+        const d = await api.testers.orden();
+        setPulsadas(d.unidades.map((u) => ({ unit: u.unit, posicion: u.posicion })));
+        setResta(d.resta);
+        setChoque(d.choque);
+        if (d.unidades.length) setEquipos(d.unidades.map((u) => u.ip));
+        if (!d.capturando) setCapturando(false);
+      } catch { /* el bridge se reinicio: el sondeo siguiente lo dira */ }
+    }, 500);
+    return () => clearInterval(t);
+  }, [capturando]);
+
+  const ordenarConBoton = async (modo: "boton" | "punta" | "reset" = "boton") => {
+    setPulsadas([]); setEquipos([]); setChoque(null); setModoOrden(modo);
+    try {
+      const d = await api.testers.capturarOrden(120, modo);
+      setCapturando(true); setResta(d.segundos);
+      toast({
+        title: modo === "punta" ? "Toca un pin de cada caja, en orden"
+             : modo === "reset" ? "Pulsa SW2 en cada caja, en orden"
+             : "Pulsa los botones en orden",
+        description: d.aviso ?? (
+          modo === "punta"
+            ? "Con el arnés DESCONECTADO: un pin cualquiera del socket que va en M, luego L1, luego L2."
+            : modo === "reset"
+              ? "SW2 es el reset: cada caja arranca de nuevo y tarda unos 10 s en volver. Deja un respiro entre una y otra."
+              : "Primero la caja que va en M, luego L1, luego L2. No van a probar: la pulsación solo ordena."),
+        variant: d.aviso ? "destructive" : undefined,
+      });
+    } catch (e: any) {
+      toast({ title: "No se pudo abrir la captura", description: String(e?.message ?? e), variant: "destructive" });
+    }
+  };
+
+  const cerrarCaptura = async () => {
+    setCapturando(false);
+    await api.testers.cerrarOrden().catch(() => {});
+  };
 
   useEffect(() => { api.fixtures.list().then((d) => setFixtures(d.fixtures)).catch(() => {}); }, []);
 
@@ -247,6 +355,82 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
         </AlertDescription>
       </Alert>
 
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Identificar un pin</CardTitle>
+          <div className="flex items-center gap-2">
+            <Select value={identFx || fixtureId} onValueChange={setIdentFx} disabled={identOn}>
+              <SelectTrigger className="w-64"><SelectValue placeholder="Fixture" /></SelectTrigger>
+              <SelectContent>
+                {fixtures.map((f) => <SelectItem key={f.id} value={f.id}>{f.nombre ?? f.id}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon" onClick={() => pito.setActivo(!pito.activo)}
+                    title={pito.activo ? "Silenciar" : "Activar sonido"}>
+              {pito.activo ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </Button>
+            {identOn
+              ? <Button variant="secondary" onClick={cerrarIdent}>Terminar</Button>
+              : <Button onClick={abrirIdent}>Empezar</Button>}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-gray-600">
+            Toca un pin con la punta de 3,3 V y te digo cuál es. Al revés que el recorrido:
+            aquí no hay que abrir ningún conector. Los números de pin son el <strong>orden en
+            que se recorrió</strong> ese conector al mapearlo, no una serigrafía — por eso
+            <span className="font-mono"> CN13.7</span> no se puede deducir mirando la pieza.
+          </p>
+
+          {identOn && (
+            <div className={`rounded-lg border-2 p-6 text-center ${
+              tocando.length ? "border-emerald-500 bg-emerald-50" : "border-dashed border-slate-300"}`}>
+              {tocando.length ? (
+                <>
+                  <div className="text-4xl font-bold text-emerald-900 font-mono">
+                    {tocando.map((p) => p.fisico ?? p.interno).join("  +  ")}
+                  </div>
+                  <div className="text-sm text-emerald-800 mt-1 font-mono">
+                    {tocando.map((p) => p.interno).join("  ")}
+                  </div>
+                  {tocando.length > 1 && (
+                    <div className="text-sm text-amber-700 mt-2">
+                      La punta toca <strong>{tocando.length} pines a la vez</strong>. Afínala
+                      o el nombre no significa nada.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-slate-500">Esperando la punta…</div>
+              )}
+            </div>
+          )}
+
+          {!tocando.length && ultimo && (
+            <div className="rounded-lg border p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide">El último que tocaste</div>
+              <div className="text-3xl font-bold font-mono">
+                {ultimo.pines.map((p) => p.fisico ?? p.interno).join("  +  ")}
+              </div>
+              <div className="text-sm text-gray-500 font-mono">
+                {ultimo.pines.map((p) => p.interno).join("  ")}
+              </div>
+            </div>
+          )}
+
+          {histIdent.length > 1 && (
+            <div className="text-sm">
+              <span className="text-gray-500">Antes: </span>
+              {histIdent.slice(1, 8).map((h, i) => (
+                <span key={i} className="font-mono mr-3">
+                  {h.pines.map((p) => p.fisico ?? p.interno).join("+")}
+                </span>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -287,7 +471,64 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
             </div>
 
             <div>
-              <Label>Equipos, en el orden del montaje</Label>
+              <div className="flex items-center justify-between">
+                <Label>Equipos, en el orden del montaje</Label>
+                <div className="flex items-center gap-1">
+                {capturando
+                  ? <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={cerrarCaptura}>
+                      Pulsando… {resta}s — terminar
+                    </Button>
+                  : <>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={corriendo}
+                              onClick={() => ordenarConBoton("reset")}
+                              title="SW2 del módulo: lo llevan todas las placas, soldadas o no">
+                        <Hand className="w-3.5 h-3.5 mr-1" />Ordenar con SW2
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={corriendo}
+                              onClick={() => ordenarConBoton("boton")}
+                              title="Solo en los equipos con el botón de disparo soldado en IO4">
+                        …o con el botón
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={corriendo}
+                              onClick={() => ordenarConBoton("punta")}
+                              title="Para los equipos sin botón soldado: toca un pin de cada socket, en orden">
+                        …o con la punta
+                      </Button>
+                    </>}
+                {equipos.length > 1 && !capturando && (
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={corriendo}
+                          onClick={() => {
+                            api.testers.identificar(equipos).catch(() => {});
+                            toast({
+                              title: "Mira las cajas",
+                              description: `Un destello = ${equipos.length > 0 ? "M" : ""}, dos = L1${
+                                equipos.length > 2 ? ", tres = L2" : ""}. Doce segundos.`,
+                            });
+                          }}>
+                    <Lightbulb className="w-3.5 h-3.5 mr-1" />¿Cuál es cuál?
+                  </Button>
+                )}
+                </div>
+              </div>
+              {capturando && (
+                <div className="text-sm rounded border border-blue-200 bg-blue-50 text-blue-900 p-2 mt-1">
+                  {pulsadas.length === 0
+                    ? (modoOrden === "reset"
+                        ? <>Pulsa <strong>SW2</strong> (el de <span className="font-mono">EN</span>) en el
+                            equipo que va en <strong>M</strong>. Se reinicia y vuelve en ~10 s;
+                            al contarse destella su número de posición.</>
+                        : modoOrden === "punta"
+                        ? <>Toca con la punta un pin cualquiera del socket del equipo que va en
+                            <strong> M</strong>, con el <strong>arnés desconectado</strong>. Cada uno
+                            destella su número de posición al contarse.</>
+                        : <>Pulsa el botón del equipo que va en <strong>M</strong>. Cada uno destella
+                            su número de posición al contarse.</>)
+                    : <>{pulsadas.map((p) => `${p.posicion} = ${p.unit}`).join("  ·  ")}
+                        {pulsadas.length < (enRed.data ?? []).length &&
+                          <> — ahora el de <strong>{pulsadas.length === 1 ? "L1" : `L${pulsadas.length}`}</strong>.</>}</>}
+                  {choque && <div className="text-red-700 mt-1">{choque}</div>}
+                </div>
+              )}
               <div className="flex flex-wrap gap-2 mt-1">
                 {(enRed.data ?? []).map((d) => {
                   const i = equipos.indexOf(d.ip || "");

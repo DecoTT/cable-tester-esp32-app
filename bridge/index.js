@@ -1,7 +1,7 @@
 // index.js — Bridge: UN proceso, UN puerto.
 //
-//   http://localhost:3001/          → la UI compilada (dist/)
-//   http://localhost:3001/api/...   → API del bridge para la UI
+//   http://127.0.0.1:3001/          → la UI compilada (dist/)
+//   http://127.0.0.1:3001/api/...   → API del bridge para la UI
 //   ws  (socket.io)                 → eventos en vivo (testers, pruebas)
 //
 // El navegador NUNCA habla con el ESP32. Solo este proceso, y solo por el
@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { db, getSetting, setSetting, audit, now, DATA_DIR } from "./db.js";
 import { TesterClient, listTesterSerialPorts } from "./tester/client.js";
 import { TesterDiscovery } from "./tester/discovery.js";
+import { refrescarIps } from "./hosts.js";
 import { renderLabelsPdf, qrDeEtiqueta, DEFAULT_TEMPLATES, LABEL_SIZES } from "./labels/render.js";
 import { listPrinters, printPdf } from "./labels/printer.js";
 import { registerSkuRoutes }    from "./routes/skus.js";
@@ -51,6 +52,9 @@ const state = {
 
 const discovery = new TesterDiscovery((list) => {
   state.discovered = list;
+  // La IP de la tabla se refresca con lo que acaba de anunciar el mDNS: es el
+  // plan B cuando el mDNS no llega, y si envejece no sirve de nada.
+  refrescarIps(list);
   io.emit("testers:discovered", list);
 });
 discovery.start();
@@ -186,9 +190,17 @@ io.on("connection", (sock) => {
 });
 
 // ── Arranque / cierre ────────────────────────────────────────
+// Solo 127.0.0.1, a proposito: esto controla hardware y guarda la produccion,
+// asi que no se anuncia a la red de la planta.
+//
+// Y por eso la direccion se da SIEMPRE como 127.0.0.1, nunca como "localhost":
+// en Windows "localhost" resuelve primero a ::1 (IPv6), donde aqui no escucha
+// nadie, y el navegador pinta "localhost rechazo la conexion" aunque el bridge
+// este perfectamente arriba. MEDIDO (2026-09-30): 127.0.0.1 responde en 0,03 s;
+// [::1] no conecta.
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`\n  Cable Tester 32CH — bridge`);
-  console.log(`  UI/API : http://localhost:${PORT}/`);
+  console.log(`  UI/API : http://127.0.0.1:${PORT}/`);
   console.log(`  UI     : ${fs.existsSync(DIST) ? "compilada (dist/)" : "SIN compilar — usa npm run dev"}`);
   console.log(`  Print  : ${getSetting("printer_name") || "sin impresora (solo PDF)"}
 `);
