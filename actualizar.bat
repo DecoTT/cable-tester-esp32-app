@@ -32,14 +32,23 @@ if not exist ".git" (
     exit /b 1
 )
 
-rem Cambios locales: actualizar los perderia. Se para aqui y se avisa, en vez
-rem de descubrirlo cuando el pull falle a medias.
-for /f "delims=" %%L in ('git status --porcelain') do (
-    echo  [ERROR] Hay cambios sin guardar en esta carpeta:
+rem Codigo editado a mano: actualizar lo perderia. Se para aqui y se avisa, en
+rem vez de descubrirlo cuando el pull falle a medias.
+rem
+rem --untracked-files=no a proposito: solo cuentan los ficheros que git SIGUE.
+rem Los datos de la estacion -base, goldens, fixtures, etiquetas, respaldos-
+rem estan en .gitignore y el pull NO los toca. Un fichero suelto en la carpeta
+rem de datos saldria como "?? data/" y bloquearia la actualizacion por nada.
+set "SUCIO="
+for /f "delims=" %%L in ('git status --porcelain --untracked-files^=no') do set "SUCIO=1"
+if defined SUCIO (
+    echo  [ERROR] Alguien edito el codigo de esta carpeta:
     echo.
-    git status --short
+    git status --short --untracked-files=no
     echo.
-    echo  Actualizar los perderia. Guardalos o deshazlos antes.
+    echo  Actualizar perderia esos cambios. Guardalos o deshazlos antes.
+    echo  Los datos de la estacion no tienen nada que ver: la base, los goldens
+    echo  y el historial no se tocan al actualizar.
     echo.
     pause
     exit /b 1

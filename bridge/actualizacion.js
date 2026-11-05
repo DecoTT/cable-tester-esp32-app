@@ -50,10 +50,15 @@ export async function versionLocal() {
       git("rev-parse", "HEAD"),
       git("log", "-1", "--format=%cI"),
       git("rev-parse", "--abbrev-ref", "HEAD"),
-      git("status", "--porcelain"),
+      // --untracked-files=no a proposito: solo cuentan los ficheros que git
+      // SIGUE. Los datos de la estacion —base, goldens, fixtures, respaldos—
+      // estan en .gitignore y `git pull` no los toca nunca; pero un fichero
+      // suelto en data/ que no encaje en una regla sale como "?? data/" y
+      // bloquearia la actualizacion diciendo que hay cambios que se perderian,
+      // que es falso y ademas asusta. Lo que de verdad impide un pull limpio
+      // es haber EDITADO codigo.
+      git("status", "--porcelain", "--untracked-files=no"),
     ]);
-    // `limpio` importa: con cambios locales sin guardar, `git pull --ff-only`
-    // falla, y es mejor avisar antes que dejar la actualizacion a medias.
     return { es_git: true, sha, fecha, rama, limpio: estado.length === 0 };
   } catch {
     return base;
@@ -142,8 +147,10 @@ export function registrarActualizacionRoutes(app) {
     if (local.limpio === false) {
       return res.status(422).json({
         ok: false,
-        error: "Hay cambios locales sin guardar en esta carpeta. " +
-               "Actualizar los perdería, así que no se hace solo.",
+        error: "Alguien editó el código de esta carpeta. Actualizar perdería esos " +
+               "cambios, así que no se hace solo. (Los datos de la estación no " +
+               "tienen nada que ver: la base, los goldens y el historial no se tocan " +
+               "al actualizar.)",
       });
     }
     try {
