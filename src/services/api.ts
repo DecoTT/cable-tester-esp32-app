@@ -255,6 +255,22 @@ export const api = {
         { method: "POST", body: JSON.stringify({ job_id, actor }) }),
   },
 
+  app: {
+    // Aviso de version. Solo AVISA: actualizar lo pide una persona, porque
+    // cambiar el software de un banco de pruebas a media produccion sin que
+    // nadie lo sepa es peor que ir desactualizado.
+    version: () => j<{ es_git: boolean; sha: string | null; fecha: string | null;
+                       rama: string | null; limpio: boolean | null }>("/api/version"),
+    actualizacion: (forzar = false) =>
+      j<{ ok: boolean; hay: boolean | null; error: string | null; detras?: number;
+          local: { es_git: boolean; sha: string | null; fecha: string | null; limpio: boolean | null };
+          remoto: { sha: string; fecha: string | null; titulo: string } | null;
+          cambios: { sha: string; fecha: string | null; titulo: string }[] }>(
+        `/api/actualizacion${forzar ? "?forzar=1" : ""}`),
+    actualizar: () => j<{ ok: boolean; mensaje?: string; error?: string }>(
+      "/api/actualizar", { method: "POST" }),
+  },
+
   skus: {
     // Umbrales de resistencia del SKU. La linea '*' es el limite general; las
     // demas la exceptuan. Se editan en planta: nadie sabe de antemano cuanto

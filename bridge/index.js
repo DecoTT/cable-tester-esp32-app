@@ -19,6 +19,7 @@ import { db, getSetting, setSetting, audit, now, DATA_DIR } from "./db.js";
 import { TesterClient, listTesterSerialPorts } from "./tester/client.js";
 import { TesterDiscovery } from "./tester/discovery.js";
 import { refrescarIps } from "./hosts.js";
+import { registrarActualizacionRoutes } from "./actualizacion.js";
 import { renderLabelsPdf, qrDeEtiqueta, DEFAULT_TEMPLATES, LABEL_SIZES } from "./labels/render.js";
 import { listPrinters, printPdf } from "./labels/printer.js";
 import { registerSkuRoutes }    from "./routes/skus.js";
@@ -169,6 +170,7 @@ registerSkuRoutes(app);
 registerTesterRoutes(app, { state, discovery, io, TesterClient, listTesterSerialPorts });
 registerMedidaRoutes(app, io);
 registerProduccionRoutes(app, io, { discovery });
+registrarActualizacionRoutes(app);
 registrarDatosRoutes(app);
 
 // PDFs generados, servidos para vista previa

@@ -38,6 +38,24 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   // Vacio = todo, que es el caso normal al preparar una PC nueva.
   const [skusExport, setSkusExport] = useState<string[]>([]);
   const skus = useQuery({ queryKey: ["skus"], queryFn: api.skus.list });
+
+  // Aviso de version. Se consulta al abrir Configuracion, no al arrancar: que
+  // la app dependa de GitHub para levantar seria absurdo en una planta.
+  const ver = useQuery({ queryKey: ["actualizacion"], queryFn: () => api.app.actualizacion(true) });
+  const [actualizando, setActualizando] = useState(false);
+  const actualizar = async () => {
+    setActualizando(true);
+    try {
+      const r = await api.app.actualizar();
+      toast({
+        title: r.ok ? "Actualizando" : "No se pudo actualizar",
+        description: r.mensaje ?? r.error,
+        variant: r.ok ? undefined : "destructive",
+      });
+    } catch (e: any) {
+      toast({ title: "No se pudo actualizar", description: String(e?.message ?? e), variant: "destructive" });
+    } finally { setActualizando(false); }
+  };
   const [importando, setImportando] = useState(false);
   const [detalle, setDetalle] = useState<TesterUnit | null>(null);
 
@@ -437,6 +455,87 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
       <DeviceDetails unidad={detalle} abierto={!!detalle} onCerrar={() => setDetalle(null)} />
 
       <Estaciones operator={operator} />
+
+      {/* ── Versión y actualizaciones ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="w-5 h-5" /> Versión de la app
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!ver.data ? (
+            <p className="text-sm text-gray-500">Comprobando…</p>
+          ) : !ver.data.local.es_git ? (
+            <div className="text-sm">
+              <p>Esta copia se descargó como ZIP, así que <strong>no puedo saber qué versión
+                tiene</strong> ni actualizarla sola.</p>
+              {ver.data.remoto && (
+                <p className="text-gray-600 mt-1">
+                  Lo último publicado es del{" "}
+                  <strong>{new Date(ver.data.remoto.fecha ?? "").toLocaleDateString()}</strong>:{" "}
+                  {ver.data.remoto.titulo}
+                </p>
+              )}
+              <p className="text-gray-600 mt-1">
+                Para actualizar, descarga el proyecto de nuevo desde GitHub.
+              </p>
+            </div>
+          ) : ver.data.hay ? (
+            <>
+              <div className="rounded-lg border-2 border-emerald-500 bg-emerald-50 p-3">
+                <p className="font-medium text-emerald-900">
+                  Hay una versión más nueva
+                  {ver.data.detras ? ` — ${ver.data.detras} cambio(s)` : ""}
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-emerald-900">
+                  {ver.data.cambios.slice(0, 6).map((c) => (
+                    <li key={c.sha}>
+                      <span className="font-mono text-xs opacity-70">{c.sha}</span> {c.titulo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {ver.data.local.limpio === false ? (
+                <p className="text-sm text-amber-800">
+                  Hay cambios sin guardar en esta carpeta. Actualizar los perdería, así que
+                  no se hace solo.
+                </p>
+              ) : (
+                <Button onClick={actualizar} disabled={actualizando}>
+                  <Download className="w-4 h-4 mr-2" />
+                  {actualizando ? "Actualizando…" : "Actualizar ahora"}
+                </Button>
+              )}
+              <p className="text-xs text-gray-500">
+                La app se cierra, se actualiza en otra ventana y vuelve sola. No se toca
+                ningún dato: productos, goldens e historial se quedan como están.
+                <strong> No lo hagas a media producción.</strong>
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">
+              Al día
+              {ver.data.local.fecha &&
+                ` — instalada la del ${new Date(ver.data.local.fecha).toLocaleDateString()}`}
+              <span className="font-mono text-xs text-gray-400 ml-2">
+                {ver.data.local.sha?.slice(0, 7)}
+              </span>
+            </p>
+          )}
+
+          {ver.data?.error && (
+            <p className="text-xs text-gray-500">
+              No pude consultar GitHub ({ver.data.error}). Sin internet no hay aviso, y no
+              pasa nada: la app funciona igual.
+            </p>
+          )}
+
+          <Button variant="ghost" size="sm" onClick={() => ver.refetch()} disabled={ver.isFetching}>
+            {ver.isFetching ? "Comprobando…" : "Comprobar ahora"}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* ── Datos de la estación ── */}
       <Card>
