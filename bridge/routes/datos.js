@@ -95,12 +95,60 @@ function escribirJsonDir(dir, mapa) {
   return n;
 }
 
-export function construirExport({ historial = true } = {}) {
+/**
+ * Armar la exportacion. Todo por defecto; con `skus` solo esos productos.
+ *
+ * Exportar por partes hace falta porque ya se trabaja en varias PC y muchas
+ * veces solo hay que pasar UN job —el de un subensamble nuevo— sin arrastrar
+ * el catalogo entero ni la produccion de la otra estacion.
+ *
+ * Los equipos (tester_units) van SIEMPRE, aunque se filtre: sin ellos la
+ * estacion de destino no puede resolver por MAC las unidades del job, que es
+ * justo lo que hace que el job funcione en otra red.
+ */
+export function construirExport({ historial = true, skus = null } = {}) {
+  const filtro = Array.isArray(skus) && skus.length ? new Set(skus) : null;
+
+  // Jobs de esos SKUs -> sus goldens -> los fixtures de esos goldens. Se sigue
+  // la cadena en vez de adivinar por el nombre: un golden puede apuntar a un
+  // fixture que no se llame como el SKU.
+  const golds = leerJsonDir(GOLD_DIR);
+  const fixs  = leerJsonDir(FIX_DIR);
+  let goldensSel = golds, fixturesSel = fixs;
+
+  if (filtro) {
+    const nombres = new Set(
+      db.prepare("SELECT DISTINCT golden FROM jobs WHERE golden IS NOT NULL").all()
+        .map((r) => r.golden)
+        .filter((g) => db.prepare(
+          "SELECT 1 FROM jobs WHERE golden = ? AND sku IN (" +
+          [...filtro].map(() => "?").join(",") + ") LIMIT 1").get(g, ...filtro)));
+    goldensSel = Object.fromEntries(Object.entries(golds).filter(([k]) => nombres.has(k)));
+    const usados = new Set(Object.values(goldensSel).map((g) => g?.fixture).filter(Boolean));
+    fixturesSel  = Object.fromEntries(Object.entries(fixs).filter(([k]) => usados.has(k)));
+  }
+
+  // Que columna de cada tabla dice a que SKU pertenece la fila. `labels` no
+  // tiene ninguna: cuelga del lote, asi que se filtra por los lotes elegidos.
+  const COL_SKU = { skus: "codigo", jobs: "sku", fixtures: "sku", lotes: "sku", tests: "sku" };
+
   const tablas = {};
   for (const t of [...TABLAS_CATALOGO, ...(historial ? TABLAS_HISTORIAL : [])]) {
-    tablas[t] = db.prepare(`SELECT * FROM ${t}`).all()
-      .map((fila) => Object.fromEntries(
-        Object.entries(fila).map(([k, v]) => [k, aJson(v)])));
+    let filas = db.prepare(`SELECT * FROM ${t}`).all();
+    if (filtro) {
+      const col = COL_SKU[t];
+      if (col) filas = filas.filter((f) => filtro.has(f[col]));
+      else if (t === "labels") {
+        const lotes = new Set((tablas.lotes ?? []).map((l) => l.id));
+        filas = filas.filter((f) => lotes.has(f.lote_id));
+      } else if (t === "audit") {
+        // La auditoria es de la estacion, no del producto: con filtro no viaja.
+        filas = [];
+      }
+      // tester_units y operators van enteros a proposito.
+    }
+    tablas[t] = filas.map((fila) => Object.fromEntries(
+      Object.entries(fila).map(([k, v]) => [k, aJson(v)])));
   }
 
   const ajustes = {};
@@ -114,10 +162,11 @@ export function construirExport({ historial = true } = {}) {
     creado: now(),
     origen: process.env.COMPUTERNAME || process.env.HOSTNAME || "desconocido",
     incluye_historial: historial,
+    solo_skus: filtro ? [...filtro] : null,
     ajustes,
     tablas,
-    goldens:  leerJsonDir(GOLD_DIR),
-    fixtures: leerJsonDir(FIX_DIR),
+    goldens:  goldensSel,
+    fixtures: fixturesSel,
   };
 }
 
@@ -138,7 +187,8 @@ export function registrarDatosRoutes(app) {
   app.get("/api/datos/exportar", (req, res) => {
     try {
       const historial = req.query.historial !== "0";
-      const bundle = construirExport({ historial });
+      const skus = String(req.query.skus || "").split(",").map((x) => x.trim()).filter(Boolean);
+      const bundle = construirExport({ historial, skus });
       const fecha = new Date().toISOString().slice(0, 10);
       audit("datos", "exportar", "datos", null,
             { historial, skus: bundle.tablas.skus.length, jobs: bundle.tablas.jobs.length });
@@ -199,7 +249,47 @@ export function registrarDatosRoutes(app) {
       // de la transaccion todo vuelve a cuadrar, y si no cuadra, no hay COMMIT.
       db.exec("PRAGMA defer_foreign_keys = ON");
 
+      // Los JOBS no se pueden importar por id.
+      //
+      // La clave de jobs es un id autoincremental, o sea un numero de fila, no
+      // el contenido. Con dos PCs trabajando a la vez eso rompe de dos formas:
+      // el job 6 de una pisa el job 6 de la otra aunque sean de SKUs distintos,
+      // y el mismo producto con id diferente en cada maquina entra DOS VECES y
+      // deja dos jobs aprobados para un solo SKU.
+      //
+      // Lo que identifica de verdad a un job es su SKU y su huella: misma
+      // receta sobre el mismo cableado. Si ya esta, se actualiza en su sitio;
+      // si no, entra con id nuevo. Y despues se garantiza uno aprobado por SKU.
+      const jobsDelFichero = Array.isArray(bundle.tablas?.jobs) ? bundle.tablas.jobs : [];
+      const colsJob = db.prepare("PRAGMA table_info(jobs)").all().map((c) => c.name);
+      let jobsNuevos = 0, jobsActualizados = 0;
+      for (const j of jobsDelFichero) {
+        const ya = db.prepare("SELECT id FROM jobs WHERE sku = ? AND huella IS ? AND golden IS ?")
+                     .get(j.sku, j.huella ?? null, j.golden ?? null);
+        const usadas = colsJob.filter((c) => c in j && c !== "id");
+        if (ya) {
+          db.prepare(`UPDATE jobs SET ${usadas.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
+            .run(...usadas.map((c) => deJson(j[c]) ?? null), ya.id);
+          jobsActualizados++;
+        } else {
+          db.prepare(`INSERT INTO jobs(${usadas.join(",")}) VALUES(${usadas.map(() => "?").join(",")})`)
+            .run(...usadas.map((c) => deJson(j[c]) ?? null));
+          jobsNuevos++;
+        }
+      }
+      // Un SKU no puede tener dos jobs aprobados: no se sabria contra cual se
+      // valido una pieza. Se deja el mas reciente y los demas se RETIRAN, no se
+      // borran — la trazabilidad de lo ya producido tiene que seguir en pie.
+      const retirados = db.prepare(`
+        UPDATE jobs SET status = 'retired'
+        WHERE status = 'approved' AND id NOT IN (
+          SELECT id FROM jobs j2 WHERE j2.status = 'approved' AND j2.sku = jobs.sku
+          ORDER BY j2.approved_at DESC, j2.id DESC LIMIT 1)
+      `).run().changes;
+      resumen.jobs = { nuevos: jobsNuevos, actualizados: jobsActualizados, retirados };
+
       for (const t of [...TABLAS_CATALOGO, ...TABLAS_HISTORIAL]) {
+        if (t === "jobs") continue;              // ya tratados arriba, por SKU+huella
         const filas = bundle.tablas?.[t];
         if (!Array.isArray(filas) || !filas.length) continue;
         const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);

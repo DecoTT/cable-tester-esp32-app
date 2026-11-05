@@ -35,6 +35,9 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   // Esto es lo que se manda aparte y se importa en la PC de planta.
   const datos = useQuery({ queryKey: ["datos-resumen"], queryFn: api.datos.resumen });
   const [conHistorial, setConHistorial] = useState(true);
+  // Vacio = todo, que es el caso normal al preparar una PC nueva.
+  const [skusExport, setSkusExport] = useState<string[]>([]);
+  const skus = useQuery({ queryKey: ["skus"], queryFn: api.skus.list });
   const [importando, setImportando] = useState(false);
   const [detalle, setDetalle] = useState<TesterUnit | null>(null);
 
@@ -457,6 +460,41 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
             </div>
           )}
 
+          {/* Exportar por partes. Por defecto va todo —es lo que casi siempre se
+              quiere— pero con varias PC a veces solo hay que pasar el job de un
+              subensamble, sin arrastrar el catalogo ni la produccion ajena. */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Qué productos</p>
+                <p className="text-xs text-gray-500">
+                  Sin elegir ninguno va <strong>todo</strong>. Elige para mandar solo esos
+                  —con su golden, su socket y los equipos— a otra PC.
+                </p>
+              </div>
+              {!!skusExport.length && (
+                <Button variant="ghost" size="sm" onClick={() => setSkusExport([])}>
+                  Exportar todo
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {(skus.data ?? []).map((s) => {
+                const sel = skusExport.includes(s.codigo);
+                return (
+                  <button key={s.codigo} type="button"
+                          onClick={() => setSkusExport((x) =>
+                            sel ? x.filter((y) => y !== s.codigo) : [...x, s.codigo])}
+                          className={`px-3 py-1.5 rounded border text-sm ${
+                            sel ? "bg-slate-900 text-white border-slate-900" : "hover:bg-slate-100"}`}>
+                    {s.codigo}
+                    {!!s.subensamble && <span className="ml-1 opacity-70">· sub</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">Incluir historial de producción</p>
@@ -470,8 +508,9 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
 
           <div className="flex flex-wrap gap-2 items-center">
             <Button asChild>
-              <a href={api.datos.urlExportar(conHistorial)} download>
-                <Download className="w-4 h-4 mr-2" />Exportar
+              <a href={api.datos.urlExportar(conHistorial, skusExport)} download>
+                <Download className="w-4 h-4 mr-2" />
+                {skusExport.length ? `Exportar ${skusExport.length} producto(s)` : "Exportar todo"}
               </a>
             </Button>
 

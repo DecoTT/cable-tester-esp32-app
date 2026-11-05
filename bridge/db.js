@@ -221,6 +221,19 @@ añadirColumna("jobs", "golden",    "TEXT");                         // fichero 
 añadirColumna("tests", "parcial", "INTEGER NOT NULL DEFAULT 0");
 añadirColumna("fixtures", "fixture_id", "TEXT");                    // id del fixture aprendido por socket
 
+// Subensamble: la pieza solo trae una parte del arnes — 8 lineas, 10 lineas —
+// y el resto de los canales esta vacio A PROPOSITO.
+//
+// Con esto marcado, la prueba EXCITA solo los canales que el golden usa en vez
+// de los 96. Sigue ESCUCHANDO en todos, asi que un hilo que se vaya a donde no
+// debe se ve igual; lo unico que deja de buscarse es un corto entre dos
+// canales que en esta pieza no existen.
+//
+// El ahorro es de red, no de medida: el barrido son 2 peticiones por canal
+// excitado mas una por unidad que escucha, y ahi se va casi todo el tiempo.
+// Un subensamble de 8 lineas pasa de 96 canales excitados a 16.
+añadirColumna("skus", "subensamble", "INTEGER NOT NULL DEFAULT 0");
+
 // ── Helpers ──────────────────────────────────────────────────
 export const now = () => new Date().toISOString();
 

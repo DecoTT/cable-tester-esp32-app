@@ -351,7 +351,18 @@ export async function barrer(units, onProgress, opciones = {}) {
   // eso sirve de control — si el mapa sale distinto segun el sentido, el mapa
   // no lo dicta el arnes sino el orden en que preguntamos, y entonces ninguna
   // medida de las de arriba vale.
-  const orden = Array.from({ length: n }, (_, i) => (opciones.invertido ? n - 1 - i : i));
+  let orden = Array.from({ length: n }, (_, i) => (opciones.invertido ? n - 1 - i : i));
+
+  // Subensamble: excitar SOLO los canales que la pieza usa.
+  //
+  // Se sigue escuchando en todos, porque la escucha es gratis —ya se consulta
+  // a cada unidad por cada canal excitado— y asi un hilo que se vaya a donde
+  // no debe aparece igual. Lo unico que deja de buscarse es un corto entre dos
+  // canales que en esta pieza no existen, y ahi no hay nada conectado.
+  if (opciones.soloCanales?.size) {
+    orden = orden.filter((g) => opciones.soloCanales.has(g));
+  }
+  const total = orden.length;
   let hechos = 0;
 
   for (const src of orden) {
@@ -411,9 +422,9 @@ export async function barrer(units, onProgress, opciones = {}) {
     // La zona encendida sigue el avance del barrido, asi que el operador ve
     // por donde va sin mirar la pantalla.
     hechos++;
-    if (hechos % 8 === 0) {
-      if (onProgress) onProgress(hechos, n);
-      const zona = Math.min(LED_RANGOS - 1, Math.floor((hechos / n) * LED_RANGOS));
+    if (hechos % 8 === 0 || hechos === total) {   // y siempre el ultimo, o un subensamble corto no llegaria al 100%
+      if (onProgress) onProgress(hechos, total);
+      const zona = Math.min(LED_RANGOS - 1, Math.floor((hechos / total) * LED_RANGOS));
       const patron = LED_VERDE(zona);
       for (const u of units) await u.leds(patron);
     }

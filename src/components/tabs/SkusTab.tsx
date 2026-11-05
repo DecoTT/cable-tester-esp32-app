@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,12 +33,38 @@ export default function SkusTab({ operator }: { operator: string }) {
 
   const refrescar = () => { qc.invalidateQueries({ queryKey: ["skus"] }); qc.invalidateQueries({ queryKey: ["jobs"] }); };
 
+  // Los umbrales viven en su propia tabla, no en la fila del SKU: se editan
+  // aqui porque es donde se mira, pero se guardan aparte.
+  const [lim, setLim] = useState<{ aviso: string; rechazo: string }>({ aviso: "", rechazo: "" });
+  const limites = useQuery({
+    queryKey: ["limites", editando?.codigo],
+    queryFn: () => api.skus.limites(editando!.codigo),
+    enabled: !!editando?.subensamble,
+  });
+  useEffect(() => {
+    if (!limites.data) return;
+    setLim({
+      aviso: String(limites.data.general.aviso ?? ""),
+      rechazo: String(limites.data.general.rechazo ?? ""),
+    });
+  }, [limites.data]);
+
   const guardarEdicion = async (s: Sku) => {
     try {
+      if (s.subensamble) {
+        const aviso = lim.aviso === "" ? null : Number(lim.aviso);
+        const rechazo = lim.rechazo === "" ? null : Number(lim.rechazo);
+        if (aviso != null && rechazo != null && aviso >= rechazo) {
+          toast({ variant: "destructive", title: "Umbrales al revés",
+                  description: "El aviso tiene que ser menor que el rechazo." });
+          return;
+        }
+        await api.skus.guardarLimite(s.codigo, { linea: "*", aviso, rechazo });
+      }
       await api.skus.upsert({
         codigo: s.codigo, descripcion: s.descripcion,
         standard_pack: s.standard_pack, labels_per_pack: s.labels_per_pack,
-        label_type: s.label_type, active: s.active,
+        label_type: s.label_type, active: s.active, subensamble: s.subensamble,
       }, operator);
       setEditando(null); refrescar();
       toast({ title: "SKU actualizado", description: s.codigo });
@@ -94,6 +120,7 @@ export default function SkusTab({ operator }: { operator: string }) {
                     </div>
                     <p className="text-sm text-gray-600">{s.descripcion || "—"}</p>
                     <div className="flex flex-wrap gap-2 mt-2">
+                      {!!s.subensamble && <Badge className="bg-sky-600">subensamble</Badge>}
                       <Badge variant="secondary">pack {s.standard_pack}</Badge>
                       <Badge variant="secondary">{s.labels_per_pack} etiqueta(s)</Badge>
                       <Badge variant="outline">{s.label_type}</Badge>
@@ -178,6 +205,64 @@ export default function SkusTab({ operator }: { operator: string }) {
                          onChange={(e) => setEditando({ ...editando, labels_per_pack: Number(e.target.value) })} />
                 </div>
               </div>
+              {/* El tiempo de ciclo del arnes completo son ~24 s porque se barren
+                  los 96 canales. Un subensamble solo trae 8 o 10 lineas y el
+                  resto esta vacio a proposito: barrerlo entero es esperar por
+                  nada en un paso que se repite todo el dia. */}
+              <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-slate-50">
+                <input type="checkbox" className="mt-1 h-4 w-4"
+                       checked={!!editando.subensamble}
+                       onChange={(e) => setEditando({ ...editando, subensamble: e.target.checked ? 1 : 0 })} />
+                <span className="text-sm">
+                  <span className="font-medium">Subensamble</span>
+                  <span className="block text-gray-600 mt-0.5">
+                    La pieza trae solo una parte del arnés. Se prueban únicamente las líneas
+                    de su golden en vez de los 96 canales — mucho más rápido. Sigue detectando
+                    un hilo que se vaya a donde no debe, y <strong>mide la resistencia</strong>,
+                    que es lo que delata un crimpe flojo antes de armar.
+                  </span>
+                </span>
+              </label>
+
+              {/* Umbrales editables, no clavados en el codigo: nadie sabe de
+                  antemano cuanto mide un contacto bueno de un producto nuevo.
+                  En planta se miden unas cuantas piezas y se ajusta. */}
+              {!!editando.subensamble && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-sm font-medium">Resistencia por línea</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="av" className="text-xs">Avisar por encima de (Ω)</Label>
+                      <Input id="av" type="number" min={0} step="0.1" value={lim.aviso}
+                             onChange={(e) => setLim({ ...lim, aviso: e.target.value })} />
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        La pieza pasa; se le dice al operador que revise ese crimpe.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="re" className="text-xs">Rechazar por encima de (Ω)</Label>
+                      <Input id="re" type="number" min={0} step="0.1" value={lim.rechazo}
+                             onChange={(e) => setLim({ ...lim, rechazo: e.target.value })} />
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Contacto inservible: la prueba sale FAIL.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    De partida 5 y 50 Ω, que vienen del firmware y <strong>no son una medida de
+                    este producto</strong>. Mide unas cuantas piezas buenas y ajústalo: la
+                    repetibilidad del banco es ±1,5 Ω, así que por debajo de 3 Ω avisaría por
+                    ruido propio.
+                  </p>
+                  {!!limites.data?.excepciones?.length && (
+                    <p className="text-xs text-amber-700">
+                      {limites.data.excepciones.length} línea(s) con límite propio, que mandan
+                      sobre este.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <Label>Tipo de etiqueta</Label>
                 <div className="flex gap-2 mt-1">

@@ -11,7 +11,8 @@ import path from "node:path";
 import fs from "node:fs";
 import {
   abrirUnidades, barrer, construirNets, huella, chName, totalCanales,
-  ledsDeFallos, clasificarAislado, validarModulos,
+  ledsDeFallos, clasificarAislado, validarModulos, medirResistencias,
+  RC_OK, RC_WARN,
 } from "../measure.js";
 import { cargarFixture, nombreFisico, describirLinea } from "../fixture.js";
 import { hostsDeJob, mensajeFaltan } from "../hosts.js";
@@ -78,6 +79,26 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   const hostsDelJob = (job) => hostsDeJob(job, discovery).hosts;
 
   /**
+   * Umbrales de resistencia de un SKU.
+   *
+   * La fila con linea='*' es el limite general; las demas la exceptuan, porque
+   * una linea larga tiene legitimamente mas resistencia que una corta.
+   *
+   * Si el SKU no tiene ninguno se usan los del firmware (5 / 50 ohm), que son
+   * un punto de partida, NO una medida de este producto. En planta se miden
+   * unas cuantas piezas buenas y se ajustan desde la pantalla del SKU.
+   */
+  const limitesDe = (sku) => {
+    const filas = db.prepare("SELECT linea, aviso, rechazo FROM limites_r WHERE sku = ?").all(sku);
+    const g = filas.find((f) => f.linea === "*");
+    return {
+      general: { aviso: g?.aviso ?? RC_OK, rechazo: g?.rechazo ?? RC_WARN },
+      porLinea: new Map(filas.filter((f) => f.linea !== "*")
+        .map((f) => [f.linea, { aviso: f.aviso ?? RC_OK, rechazo: f.rechazo ?? RC_WARN }])),
+    };
+  };
+
+  /**
    * La prueba de produccion, una sola vez y en un solo sitio.
    *
    * La llaman DOS cosas: el boton de la pantalla y el switch fisico del equipo.
@@ -113,6 +134,9 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
     const inicio = now();
     let resultado = "ERROR";
     let fallos = [];
+    // Lo que NO rechaza la pieza pero el operador debe mirar: un contacto
+    // que conduce pero va justo. Se separa de los fallos a proposito.
+    let recomendaciones = [];
     let huellaMedida = null;
     let error = null;
 
@@ -128,13 +152,24 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       const g = JSON.parse(fs.readFileSync(gp, "utf8"));
       const fixture = g.fixture ? cargarFixture(g.fixture) : null;
 
+      // El indice nombre -> canal hace falta ANTES del barrido para poder
+      // decirle que canales excitar.
+      const idx = new Map();
+      for (let i = 0; i < n; i++) idx.set(chName(i, units), i);
+
+      // Subensamble: se excitan solo los canales del golden. El resto de la
+      // placa esta vacio A PROPOSITO en esta pieza, y barrerla entera es la
+      // diferencia entre 24 s y unos pocos.
+      const sub = !!db.prepare("SELECT subensamble FROM skus WHERE codigo = ?").get(sku)?.subensamble;
+      const soloCanales = sub
+        ? new Set(g.nets.flat().map((c) => idx.get(c)).filter((x) => x != null))
+        : null;
+
       const conn = await barrer(units, (hecho, total) =>
-        emit("medida:progreso", { fase: "prueba", hecho, total }));
+        emit("medida:progreso", { fase: "prueba", hecho, total }), { soloCanales });
       const { nets, aislados } = construirNets(conn, n);
       huellaMedida = huella(nets, aislados, units);
 
-      const idx = new Map();
-      for (let i = 0; i < n; i++) idx.set(chName(i, units), i);
       const esp  = pares(g.nets.map((net) => net.map((c) => idx.get(c) ?? -1)));
       const real = pares(nets);
 
@@ -155,6 +190,43 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
                  cs.map((c) => nombreFisico(c, units, fixture).texto).join("  "),
           canales: cs.map((c) => chName(c, units)),
         });
+      }
+
+      // ── Resistencia, solo en subensambles ──────────────────
+      //
+      // La continuidad no ve un crimpe flojo: MEDIDO en CN12.5<->CN16.4, que
+      // dio 39, 6 y 69 ohm en tres medidas y paso el test digital las tres
+      // veces. Conduce lo suficiente para parecer bueno y falla en planta a
+      // ratos.
+      //
+      // Aqui se mide porque es asequible: en 46 lineas duplica el ciclo, en 8
+      // cuesta un par de segundos. Y es el paso donde el defecto es barato de
+      // corregir, antes de armar.
+      //
+      // Los umbrales son del SKU, no del firmware: nadie sabe todavia cuanto
+      // mide un contacto bueno de este producto, asi que en planta se miden
+      // unas cuantas piezas buenas y se ajustan.
+      if (sub && nets.length) {
+        const lim = limitesDe(sku);
+        const med = await medirResistencias(nets, units);
+        for (const m of med) {
+          const l = lim.porLinea.get(m.linea) ?? lim.general;
+          const [ga, gb] = [m.a, m.b];
+          const texto = `${describirLinea(ga, gb, units, fixture).texto} — ${m.r.toFixed(1)} Ω`;
+          if (l.rechazo != null && m.r > l.rechazo) {
+            fallos.push({
+              tipo: "RESISTENCIA",
+              texto: `${texto} (límite ${l.rechazo} Ω)`,
+              canales: [chName(ga, units), chName(gb, units)],
+            });
+          } else if (l.aviso != null && m.r > l.aviso) {
+            recomendaciones.push({
+              tipo: "REVISAR",
+              texto: `${texto} (normal hasta ${l.aviso} Ω) — revisa el crimpe`,
+              canales: [chName(ga, units), chName(gb, units)],
+            });
+          }
+        }
       }
 
       resultado = fallos.length ? "FAIL" : "PASS";
@@ -188,7 +260,12 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
                         duration_ms, result, faults, lote_id, notes, parcial)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(sku, job.id, job.crc ?? 0, operador, macCabecera, inicio, now(), dur,
-           resultado, JSON.stringify(fallos), lote_id ?? null, error, parcial ? 1 : 0);
+           resultado, JSON.stringify(fallos), lote_id ?? null,
+           // Las recomendaciones van al historial aunque la pieza pase: si una
+           // linea lleva semanas avisando, eso se ve en los registros, no en
+           // la memoria de quien estuviera ese dia.
+           error ?? (recomendaciones.length ? JSON.stringify({ recomendaciones }) : null),
+           parcial ? 1 : 0);
 
     let pack = null;
     if (lote_id) {
@@ -225,7 +302,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
 
     const salida = {
       id: Number(info.lastInsertRowid),
-      resultado, fallos, error, origen, parcial: !!parcial,
+      resultado, fallos, recomendaciones, error, origen, parcial: !!parcial,
       duracion_ms: dur, pack,
       huella: huellaMedida, golden: job.huella,
       job: { id: job.id, nombre: job.nombre, nets: job.nets_count, unidades: hosts.length },

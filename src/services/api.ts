@@ -88,6 +88,9 @@ export interface TesterUnit {
 export interface Sku {
   codigo: string; descripcion: string; standard_pack: number; labels_per_pack: number;
   label_type: "large" | "standard"; label_template: LabelTemplate | null; active: number;
+  // 1 = la pieza trae solo una parte del arnes: la prueba excita unicamente
+  // los canales de su golden en vez de los 96.
+  subensamble: number;
   created_at: string; updated_at: string;
 }
 
@@ -253,6 +256,21 @@ export const api = {
   },
 
   skus: {
+    // Umbrales de resistencia del SKU. La linea '*' es el limite general; las
+    // demas la exceptuan. Se editan en planta: nadie sabe de antemano cuanto
+    // mide un contacto bueno de un producto nuevo.
+    limites: (sku: string) =>
+      j<{ ok: boolean;
+          general: { linea: string; aviso: number | null; rechazo: number | null; nota?: string | null };
+          excepciones: { linea: string; aviso: number | null; rechazo: number | null; nota?: string | null }[] }>(
+        `/api/skus/${encodeURIComponent(sku)}/limites`),
+    guardarLimite: (sku: string, body: { linea?: string; aviso?: number | null; rechazo?: number | null; nota?: string | null }) =>
+      j<{ ok: boolean; error?: string }>(`/api/skus/${encodeURIComponent(sku)}/limites`,
+        { method: "PUT", body: JSON.stringify(body) }),
+    borrarLimite: (sku: string, linea: string) =>
+      j<{ ok: boolean }>(`/api/skus/${encodeURIComponent(sku)}/limites/${encodeURIComponent(linea)}`,
+        { method: "DELETE" }),
+
     list:   () => j<Sku[]>("/api/skus"),
     upsert: (s: Partial<Sku> & { codigo: string }, actor?: string) =>
       j("/api/skus", { method: "POST", body: JSON.stringify({ ...s, actor }) }),
@@ -446,7 +464,11 @@ export const api = {
     }>("/api/datos/resumen"),
     // Descarga directa: la hace el navegador, no fetch, para que salga el
     // dialogo de guardar y el fichero no tenga que pasar por memoria.
-    urlExportar: (historial: boolean) => `/api/datos/exportar?historial=${historial ? "1" : "0"}`,
+    // Sin `skus` exporta todo, que es el caso normal. Con una lista, solo esos
+    // productos: con varias PC muchas veces solo hay que pasar UN job.
+    urlExportar: (historial: boolean, skus: string[] = []) =>
+      `/api/datos/exportar?historial=${historial ? "1" : "0"}` +
+      (skus.length ? `&skus=${encodeURIComponent(skus.join(","))}` : ""),
     importar: (bundle: unknown) => j<{
       ok: boolean; respaldo?: string; origen?: string; creado?: string;
       resumen?: Record<string, number>; error?: string;

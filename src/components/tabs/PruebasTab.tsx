@@ -23,7 +23,12 @@ import { useToast } from "@/hooks/use-toast";
 
 interface Resultado {
   id: number; resultado: "PASS" | "FAIL" | "ERROR";
-  fallos: Fallo[]; error: string | null;
+  fallos: Fallo[];
+  // Lo que NO rechaza la pieza pero el operador debe mirar: un contacto que
+  // conduce pero va justo. Solo lo traen los subensambles, que son los que
+  // miden resistencia.
+  recomendaciones?: Fallo[];
+  error: string | null;
   duracion_ms: number; huella: string | null; golden: string;
   job: { id: number; nombre: string; nets: number; unidades: number };
 }
@@ -251,6 +256,25 @@ export default function PruebasTab({ operator, sku, setSku }: {
                       {res.fallos.some((f) => f.texto.includes("M.") || f.texto.includes("L1."))
                         ? "Los nombres son internos del tester. Recorre el socket en la pestaña Socket para verlos como CN15.3."
                         : null}
+                    </p>
+                  </div>
+                )}
+
+                {!!res.recomendaciones?.length && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-medium text-amber-800">
+                      La pieza pasa, pero conviene revisar:
+                    </p>
+                    {res.recomendaciones.map((f, i) => (
+                      <div key={i} className="bg-amber-50 border border-amber-300 rounded-md p-3">
+                        <Badge className="bg-amber-500">{f.tipo}</Badge>
+                        <div className="font-mono text-sm mt-1 text-amber-900">{f.texto}</div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-amber-700">
+                      Conduce, así que el test digital la da por buena — pero una resistencia
+                      alta es un crimpe flojo, y eso falla en planta a ratos. Mejor corregirlo
+                      ahora que con el arnés armado.
                     </p>
                   </div>
                 )}

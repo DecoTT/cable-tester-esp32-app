@@ -16,18 +16,21 @@ export function registerSkuRoutes(app) {
 
   app.post("/api/skus", (req, res) => {
     const { codigo, descripcion = "", standard_pack = 10, labels_per_pack = 2,
-            label_type = "large", label_template = null, actor = "sistema" } = req.body || {};
+            label_type = "large", label_template = null, subensamble = false,
+            actor = "sistema" } = req.body || {};
     if (!codigo) return res.json({ ok: false, error: "codigo requerido" });
     const tpl = label_template || DEFAULT_TEMPLATES[label_type] || DEFAULT_TEMPLATES.large;
     const t = now();
-    db.prepare(`INSERT INTO skus(codigo, descripcion, standard_pack, labels_per_pack, label_type, label_template, active, created_at, updated_at)
-                VALUES(?,?,?,?,?,?,1,?,?)
+    db.prepare(`INSERT INTO skus(codigo, descripcion, standard_pack, labels_per_pack, label_type, label_template, subensamble, active, created_at, updated_at)
+                VALUES(?,?,?,?,?,?,?,1,?,?)
                 ON CONFLICT(codigo) DO UPDATE SET descripcion=excluded.descripcion, standard_pack=excluded.standard_pack,
                   labels_per_pack=excluded.labels_per_pack, label_type=excluded.label_type,
-                  label_template=excluded.label_template, updated_at=excluded.updated_at`)
+                  label_template=excluded.label_template, subensamble=excluded.subensamble,
+                  updated_at=excluded.updated_at`)
       .run(String(codigo).toUpperCase(), descripcion, Number(standard_pack), Number(labels_per_pack),
-           label_type, JSON.stringify(tpl), t, t);
-    audit(actor, "sku.upsert", "sku", codigo, { descripcion, standard_pack, labels_per_pack, label_type });
+           label_type, JSON.stringify(tpl), subensamble ? 1 : 0, t, t);
+    audit(actor, "sku.upsert", "sku", codigo,
+          { descripcion, standard_pack, labels_per_pack, label_type, subensamble: !!subensamble });
     res.json({ ok: true });
   });
 
