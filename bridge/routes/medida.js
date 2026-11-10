@@ -173,9 +173,15 @@ export function registerMedidaRoutes(app, io) {
       // el DHCP y cambia sola. Un golden atado a IPs sigue pareciendo correcto
       // el dia que el router reparte distinto, y lo unico que se nota es que
       // los informes senalan el conector equivocado.
+      // La MAC la declara EL EQUIPO (viene de su /api/status al abrirlo). La
+      // tabla por IP queda solo de respaldo para un equipo que no contesto el
+      // status: deducir la identidad de la direccion es lo que dejo J2 y J9
+      // atados a IPs muertas. Ver el comentario de Unit en measure.js.
       unidades: vivo.units.map((u) => {
-        const r = db.prepare("SELECT mac, unit FROM tester_units WHERE ip = ?").get(u.host);
-        return { host: u.host, canales: u.n, mac: r?.mac ?? null, unit: r?.unit ?? null };
+        const r = u.mac ? null
+                : db.prepare("SELECT mac, unit FROM tester_units WHERE ip = ?").get(u.host);
+        return { host: u.host, canales: u.n,
+                 mac: u.mac ?? r?.mac ?? null, unit: u.unit ?? r?.unit ?? null };
       }),
       total_canales: n,
       esperadas: esperadas != null ? Number(esperadas) : null,
@@ -185,8 +191,17 @@ export function registerMedidaRoutes(app, io) {
       resistencias: med.map((m) => ({ linea: m.linea, r: Number(m.r.toFixed(2)) })),
     };
     fs.writeFileSync(path.join(GOLD_DIR, `${nombre}.json`), JSON.stringify(datos, null, 2), "utf8");
-    audit("golden", "guardado", `${nombre} h=${datos.huella}`);
-    res.json({ ok: true, golden: datos, sin_esperadas: esperadas == null });
+    // Un golden sin MACs queda atado a direcciones de red, y eso caduca solo.
+    // Se guarda igual —no tirar una captura que costo montar el arnes— pero se
+    // dice, porque antes no se decia y por eso aparecio semanas despues.
+    const sinMac = datos.unidades.filter((u) => !u.mac).length;
+    if (sinMac) {
+      console.log(`[golden] ${nombre}: ${sinMac} de ${datos.unidades.length} unidades SIN MAC ` +
+                  "— queda atado a direcciones IP");
+    }
+    audit("golden", "guardado", `${nombre} h=${datos.huella}${sinMac ? ` SIN_MAC=${sinMac}` : ""}`);
+    res.json({ ok: true, golden: datos, sin_esperadas: esperadas == null,
+               sin_mac: sinMac || null, unidades: datos.unidades.length });
   }));
 
   app.get("/api/medida/goldens", (_req, res) => {
@@ -354,7 +369,14 @@ export function registerMedidaRoutes(app, io) {
     `).run(sku, nombre ?? gname, g.total_canales, bytes, g.nets.length, 0,
            // Las MACs del golden, en su ORDEN: es lo que identifica de verdad
            // a las unidades. Los hosts se guardan igual, pero como pista.
-           JSON.stringify(g.unidades.map((u) => u.mac).filter(Boolean)),
+           //
+           // TODO O NADA. Antes iba un .filter(Boolean), y eso es peor que no
+           // guardar nada: si faltaba la MAC de L1, la lista quedaba con dos
+           // elementos y el segundo —que es L2— pasaba a ocupar la posicion de
+           // L1. El job apuntaria al equipo equivocado creyendo que va por MAC.
+           // O estan todas, o se trabaja por IP y se avisa.
+           JSON.stringify(g.unidades.every((u) => u.mac)
+             ? g.unidades.map((u) => u.mac) : []),
            g.creado, aprobado_por ?? null, now(),
            JSON.stringify(g.unidades.map((u) => u.host)),
            g.esperadas ?? null, g.huella, gname);

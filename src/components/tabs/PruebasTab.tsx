@@ -30,6 +30,8 @@ interface Resultado {
   recomendaciones?: Fallo[];
   error: string | null;
   duracion_ms: number; huella: string | null; golden: string;
+  // Contra qué se validó. Sin esto el veredicto no se puede leer solo.
+  sku?: string; golden_nombre?: string | null; por_mac?: boolean;
   job: { id: number; nombre: string; nets: number; unidades: number };
 }
 
@@ -231,6 +233,34 @@ export default function PruebasTab({ operator, sku, setSku }: {
                       {(res.duracion_ms / 1000).toFixed(1)} s
                       {res.huella && <> · huella <span className="font-mono">{res.huella}</span></>}
                     </div>
+                    {/* CONTRA QUÉ SE VALIDÓ ESTA PIEZA.
+                        Con el botón, el producto que corre no tiene por qué ser
+                        el del desplegable de arriba: lo decide el equipo que se
+                        presionó. Si el veredicto no lo dice, nadie sabe contra
+                        qué golden se aprobó o se rechazó la pieza. */}
+                    {res.sku && (
+                      <div className="text-sm mt-0.5">
+                        <span className="text-gray-500">Validado contra </span>
+                        <span className="font-semibold">{res.sku}</span>
+                        {res.golden_nombre && <>
+                          <span className="text-gray-500"> · golden </span>
+                          <span className="font-mono">{res.golden_nombre}</span>
+                        </>}
+                        <span className="text-gray-500"> · esperaba </span>
+                        <span className="font-mono">{res.golden}</span>
+                        {res.job?.nets != null && <>
+                          <span className="text-gray-500"> · {res.job.nets} conexiones en </span>
+                          <span>{res.job.unidades} equipo(s)</span>
+                        </>}
+                      </div>
+                    )}
+                    {res.por_mac === false && (
+                      <div className="text-sm mt-1 text-amber-800">
+                        ⚠ Este producto está guardado con <b>direcciones de red</b>, no con
+                        los equipos. Si el router reparte distinto, puede medirse el equipo
+                        equivocado. Vuelve a capturar su golden.
+                      </div>
+                    )}
                   </div>
                 </div>
 

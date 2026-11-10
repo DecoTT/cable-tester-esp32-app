@@ -23,22 +23,39 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── Una unidad ───────────────────────────────────────────────
 export class Unit {
-  constructor(host, index, base = 0, channels = CH_PER_UNIT) {
+  constructor(host, index, base = 0, channels = CH_PER_UNIT, mac, unit) {
     this.host = host;
     this.index = index;
     this.base = base;          // primer canal global de esta unidad
     this.n = channels;         // canales POBLADOS (16 o 32)
+    // QUIEN es esta unidad, segun ELLA MISMA.
+    //
+    // La MAC no se deduce de la IP. Antes el golden la buscaba en la tabla de
+    // equipos con "WHERE ip = ?", y eso falla justo cuando mas falta hace: si
+    // el DHCP repartio distinto, la fila tiene la IP vieja, la consulta no
+    // encuentra nada y el golden se guardaba con mac: null SIN DECIR NADA. Ese
+    // golden queda atado a direcciones, y semanas despues la prueba se va a
+    // buscar un equipo que ya no existe.
+    //
+    // MEDIDO (Guadalajara, 10-nov): los goldens J2 y J9 tienen las tres
+    // unidades con mac: null, y sus jobs con tester_macs vacio. La proteccion
+    // por MAC no les aplicaba. Preguntandoselo al equipo esto no puede pasar.
+    this.mac = mac ?? null;
+    this.unit = unit ?? null;
   }
 
   static async open(host, index, base) {
-    let n = CH_PER_UNIT;
+    let n = CH_PER_UNIT, mac = null, unit = null;
     try {
       const r = await fetch(`http://${host}/api/status`, {
         signal: AbortSignal.timeout(6000),
       });
-      n = (await r.json()).channels ?? CH_PER_UNIT;
+      const st = await r.json();
+      n = st.channels ?? CH_PER_UNIT;
+      mac = st.mac || null;
+      unit = st.unit || null;
     } catch { /* si no contesta, se asume 32 y ya fallara al medir */ }
-    return new Unit(host, index, base, n);
+    return new Unit(host, index, base, n, mac, unit);
   }
 
   /**

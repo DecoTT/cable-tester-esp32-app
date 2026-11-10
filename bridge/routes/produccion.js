@@ -305,6 +305,14 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       resultado, fallos, recomendaciones, error, origen, parcial: !!parcial,
       duracion_ms: dur, pack,
       huella: huellaMedida, golden: job.huella,
+      // CONTRA QUE SE VALIDO. Va en la respuesta porque el veredicto tiene que
+      // poder leerse solo: con el boton, la pantalla puede estar enseñando otro
+      // producto que el que acaba de correr, y entonces el operador no sabe
+      // que lo esta validando. Palabras de Cesar, 10-nov: «no es nuevo, es de
+      // los guardados» — y no habia forma de saber cual.
+      sku,
+      golden_nombre: job.golden ?? null,
+      por_mac: hostsDeJob(job, discovery).porMac,
       job: { id: job.id, nombre: job.nombre, nets: job.nets_count, unidades: hosts.length },
     };
     // El evento lleva el resultado ENTERO, no solo el veredicto: una prueba
@@ -539,11 +547,44 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
    * el producto equivocado da un RECHAZADO que parece un defecto de la pieza.
    */
   function resolverBoton(mac, host) {
-    const candidatos = db.prepare(
+    const aprobados = db.prepare(
       "SELECT * FROM jobs WHERE status = 'approved' ORDER BY approved_at DESC"
-    ).all().filter((j) => hostsDelJob(j).includes(host));
+    ).all();
+
+    // UN JOB ATADO A IPs NO PUEDE AGARRAR EL BOTON.
+    //
+    // El boton elige entre los jobs "de este equipo", y eso se decide mirando
+    // si el equipo esta en la lista de hosts del job. Para un job con MACs eso
+    // es identidad. Para uno guardado solo con direcciones, es una coincidencia
+    // del DHCP — y una coincidencia no puede decidir contra que golden se
+    // aprueba una pieza.
+    //
+    // CASO REAL (Guadalajara, 10-nov): el job J2 quedo guardado con
+    // 192.168.1.73/.74/.75 porque su golden se capturo sin MACs. Hoy el equipo
+    // 424C esta en .73. Presionar su boton metia J2 como candidato legitimo,
+    // sin que nadie lo hubiera elegido y sin que la pantalla lo dijera.
+    //
+    // Por la pantalla si se puede correr: ahi el producto lo elige una persona.
+    const porIp = [];
+    const candidatos = aprobados.filter((j) => {
+      const r = hostsDeJob(j, discovery);
+      if (!r.hosts.includes(host)) return false;
+      if (!r.porMac) { porIp.push(j.sku); return false; }
+      return true;
+    });
 
     if (!candidatos.length) {
+      if (porIp.length) {
+        const q = [...new Set(porIp)].join(", ");
+        return {
+          job: null, falta: "macs",
+          motivo: `solo hay jobs atados a IPs (${q})`,
+          mensaje: `${q}: su golden se guardó con direcciones de red, no con los equipos. ` +
+                   "El botón no puede saber si esta caja es la suya, así que no corre. " +
+                   "Vuelve a capturar el golden, o lánzalo desde la pantalla eligiendo el producto.",
+          candidatos: [...new Set(porIp)],
+        };
+      }
       return {
         job: null, falta: "job",
         motivo: "no pertenece a ningún job aprobado",
