@@ -56,7 +56,7 @@ function Shell() {
   // No es duplicar estado por gusto: una prueba lanzada con el BOTON FISICO no
   // pasa por el navegador, asi que el bridge tiene que poder responder solo a
   // "¿que estoy probando y quien lo prueba?". localStorage no le sirve: vive en
-  // el navegador, y el boton se pulsa aunque la pantalla este apagada.
+  // el navegador, y el boton se presiona aunque la pantalla este apagada.
   useEffect(() => {
     api.saveSettings({ sku_activo: sku, operador_activo: operator }, operator || "sistema")
        .catch(() => { /* sin bridge, el boton tampoco va a disparar nada */ });

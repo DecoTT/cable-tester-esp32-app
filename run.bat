@@ -103,7 +103,7 @@ exit /b 0
 
 :: ===========================================================================
 ::  Subrutinas (misma logica que setup.bat: run.bat tiene que poder arrancar
-::  sin haber generado ningun fichero intermedio)
+::  sin haber generado ningun archivo intermedio)
 :: ===========================================================================
 
 :: --- Localiza un Node 22.5 o superior ---------------------------------------

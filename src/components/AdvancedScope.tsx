@@ -132,7 +132,7 @@ export default function AdvancedScope({ sku }: { sku: string }) {
       const r = await api.avanzado.modulos(destino);
       setModulos(r);
       toast({
-        title: r.ok ? `${r.total} canales sanos` : `${r.malos.length} canal(es) pegados a masa`,
+        title: r.ok ? `${r.total} canales sanos` : `${r.malos.length} canal(es) pegados a tierra (GND)`,
         description: r.ok
           ? "Las placas están bien. Si una línea falla con el arnés puesto, es del arnés."
           : "Con el arnés fuera, esto es de la placa. Ver la lista.",
@@ -182,7 +182,7 @@ export default function AdvancedScope({ sku }: { sku: string }) {
         <Info className="w-4 h-4" />
         <AlertDescription className="text-sm">
           <strong>Qué es esto.</strong> Un osciloscopio <em>lento</em>: ~324 muestras/s,
-          voltios reales del arnés. <strong>No hay diagrama de ojo</strong> ni tiempo de
+          volts reales del arnés. <strong>No hay diagrama de ojo</strong> ni tiempo de
           subida — eso necesita muestrear a GHz, y el flanco de un arnés son decenas de
           nanosegundos. Lo que mide es el <strong>nivel</strong> y su{" "}
           <strong>estabilidad</strong>: un pin conectado sigue al excitador y no se mueve;
@@ -272,11 +272,11 @@ export default function AdvancedScope({ sku }: { sku: string }) {
             <CardTitle className="text-base">
               Módulos: {modulos.ok
                 ? <span className="text-green-700">{modulos.total} canales sanos</span>
-                : <span className="text-red-700">{modulos.malos.length} de {modulos.total} pegados a masa</span>}
+                : <span className="text-red-700">{modulos.malos.length} de {modulos.total} pegados a tierra (GND)</span>}
             </CardTitle>
             <p className="text-sm text-gray-600">
               Medido con el arnés <strong>fuera</strong>: lo que salga mal aquí es de la placa.
-              Un canal pegado a masa y un cable roto se ven igual en el mapa, y esta es la
+              Un canal pegado a tierra (GND) y un cable roto se ven igual en el mapa, y esta es la
               única medida que los separa.
             </p>
           </CardHeader>

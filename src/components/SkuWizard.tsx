@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 // receta y se guarda con el job.
 //
 // Los pasos son bloqueantes a proposito. En particular "validar modulos": un
-// canal pegado a masa y un cable roto se ven IGUAL en el mapa, asi que si se
+// canal pegado a tierra y un cable roto se ven IGUAL en el mapa, asi que si se
 // captura el golden con una placa defectuosa, el defecto queda congelado como
 // estado normal y el tester deja de vigilar esas lineas para siempre.
 
@@ -166,7 +166,7 @@ export default function SkuWizard({ operator, onDone }: { operator: string; onDo
     switch (STEPS[step].id) {
       case "sku":      return sku.trim().length > 0;
       case "unidades": return orden.length > 0 && totalCh > 0;
-      // Bloqueante: capturar un golden sobre una placa con un canal a masa
+      // Bloqueante: capturar un golden sobre una placa con un canal a tierra
       // congela el defecto y el tester deja de vigilar esa línea.
       case "modulos":  return chk?.ok === true;
       case "golden":   return !!gold;
@@ -295,7 +295,7 @@ export default function SkuWizard({ operator, onDone }: { operator: string; onDo
               <Alert>
                 <AlertDescription>
                   <strong>Desconecta el arnés</strong> antes de este paso. En el mapa, un canal
-                  pegado a masa y un cable roto se ven idénticos: sin esta comprobación no hay
+                  pegado a tierra (GND) y un cable roto se ven idénticos: sin esta comprobación no hay
                   forma de saber de quién es la culpa, y un defecto de placa quedaría congelado
                   dentro del golden.
                 </AlertDescription>
@@ -315,7 +315,7 @@ export default function SkuWizard({ operator, onDone }: { operator: string; onDo
               {chk && (chk.ok ? (
                 <Alert className="border-green-300 bg-green-50">
                   <AlertDescription className="text-green-900">
-                    <b>{chk.total}/{chk.total} OK</b> — ningún canal pegado a masa.
+                    <b>{chk.total}/{chk.total} OK</b> — ningún canal pegado a tierra (GND).
                   </AlertDescription>
                 </Alert>
               ) : (

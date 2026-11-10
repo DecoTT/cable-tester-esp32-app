@@ -50,9 +50,9 @@ export async function versionLocal() {
       git("rev-parse", "HEAD"),
       git("log", "-1", "--format=%cI"),
       git("rev-parse", "--abbrev-ref", "HEAD"),
-      // --untracked-files=no a proposito: solo cuentan los ficheros que git
+      // --untracked-files=no a proposito: solo cuentan los archivos que git
       // SIGUE. Los datos de la estacion —base, goldens, fixtures, respaldos—
-      // estan en .gitignore y `git pull` no los toca nunca; pero un fichero
+      // estan en .gitignore y `git pull` no los toca nunca; pero un archivo
       // suelto en data/ que no encaje en una regla sale como "?? data/" y
       // bloquearia la actualizacion diciendo que hay cambios que se perderian,
       // que es falso y ademas asusta. Lo que de verdad impide un pull limpio

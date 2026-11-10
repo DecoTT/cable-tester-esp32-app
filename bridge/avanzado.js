@@ -135,7 +135,7 @@ export async function onda(units, ga, gb, { ciclos = 2, porNivel = 10 } = {}) {
                   `(${sa.media.toFixed(0)} mV de media). Eso es acoplamiento del vecino: el hilo NO llega.`;
   } else if (sa.media < 500) {
     tipo = "abierta";
-    explicacion = "El extremo lejano se queda a cero: el hilo no llega, o está pegado a masa.";
+    explicacion = "El extremo lejano se queda a cero: el hilo no llega, o está pegado a tierra (GND).";
   } else {
     tipo = "resistiva";
     explicacion = `Nivel intermedio estable (${sa.media.toFixed(0)} mV): hay camino, pero con ` +

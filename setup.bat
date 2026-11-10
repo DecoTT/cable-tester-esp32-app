@@ -25,7 +25,7 @@ if not errorlevel 1 (
     echo  %~dp0
     echo.
     echo  Pasa casi siempre por abrir el ZIP y hacer doble clic dentro.
-    echo  Windows extrae solo este fichero y lo tira al terminar.
+    echo  Windows extrae solo este archivo y lo tira al terminar.
     echo.
     echo  EXTRAE el ZIP entero a una carpeta de verdad, por ejemplo C:\CableTester32App,
     echo  y ejecuta setup.bat desde ahi.

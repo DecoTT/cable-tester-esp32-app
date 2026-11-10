@@ -1,4 +1,4 @@
-// datos.js — Exportar e importar la estación entera en un fichero.
+// datos.js — Exportar e importar la estación entera en un archivo.
 //
 // POR QUE EXISTE
 //
@@ -8,7 +8,7 @@
 // todo eso para funcionar el primer día.
 //
 // Asi que van por separado: se clona el repo, se ejecuta setup.bat, y se
-// importa UN fichero .ct32.json con lo que aqui se exporta.
+// importa UN archivo .ct32.json con lo que aqui se exporta.
 //
 // QUE LLEVA Y QUE NO
 //
@@ -22,8 +22,8 @@
 //    el nombre de una impresora que no existe en la otra PC deja la estación
 //    imprimiendo al vacío sin decir nada.
 //
-// LOS GOLDEN VAN DENTRO DEL FICHERO, no por referencia. Un job sin su golden no
-// puede juzgar ninguna pieza, y son ficheros sueltos en disco: si se exportara
+// LOS GOLDEN VAN DENTRO DEL ARCHIVO, no por referencia. Un job sin su golden no
+// puede juzgar ninguna pieza, y son archivos sueltos en disco: si se exportara
 // solo el nombre, la importación dejaría jobs que fallan al primer uso.
 
 import express from "express";
@@ -53,7 +53,7 @@ const TABLAS_HISTORIAL = ["lotes", "tests", "labels", "audit"];
 // un Uint8Array en {"0":1,"1":0,...}, que al volver ya NO se puede escribir en
 // la base — y el fallo aparece al importar, lejos de donde se causo.
 //
-// MEDIDO: la primera version de esta exportacion generaba un fichero de aspecto
+// MEDIDO: la primera version de esta exportacion generaba un archivo de aspecto
 // perfecto que al importarse moria con "cannot be bound to SQLite parameter 6".
 // Por eso los binarios van marcados y en base64, no a merced del JSON.
 const MARCA_BLOB = "__blob_b64";
@@ -75,7 +75,7 @@ function leerJsonDir(dir) {
   const out = {};
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".json"))) {
     try { out[f.replace(/\.json$/, "")] = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")); }
-    catch { /* un fichero corrupto no puede tumbar la exportación entera */ }
+    catch { /* un archivo corrupto no puede tumbar la exportación entera */ }
   }
   return out;
 }
@@ -85,7 +85,7 @@ function escribirJsonDir(dir, mapa) {
   fs.mkdirSync(dir, { recursive: true });
   let n = 0;
   for (const [id, datos] of Object.entries(mapa)) {
-    // El id viene de un fichero externo: sin esto, un nombre como
+    // El id viene de un archivo externo: sin esto, un nombre como
     // "../../bridge/index" escribiria fuera de data/.
     const limpio = path.basename(String(id)).replace(/[^\w.-]/g, "_");
     if (!limpio || limpio === "." || limpio === "..") continue;
@@ -183,7 +183,7 @@ export function registrarDatosRoutes(app) {
     });
   });
 
-  // ── Exportar: un fichero, descarga directa ──
+  // ── Exportar: un archivo, descarga directa ──
   app.get("/api/datos/exportar", (req, res) => {
     try {
       const historial = req.query.historial !== "0";
@@ -204,9 +204,9 @@ export function registrarDatosRoutes(app) {
   // ── Importar ──
   //
   // Antes de tocar nada se copia la base. Importar es destructivo por diseño
-  // —reemplaza filas por clave primaria— y sin copia previa un fichero
+  // —reemplaza filas por clave primaria— y sin copia previa un archivo
   // equivocado se lleva por delante la producción de la estación.
-  // Parser propio: el global se queda en 2 MB y un fichero con historial pasa
+  // Parser propio: el global se queda en 2 MB y un archivo con historial pasa
   // de eso de largo. El bridge solo escucha en 127.0.0.1, asi que el limite
   // amplio no abre nada al exterior.
   app.post("/api/datos/importar", express.json({ limit: "256mb" }), (req, res) => {
@@ -214,13 +214,13 @@ export function registrarDatosRoutes(app) {
     if (!bundle || bundle.formato !== FORMATO) {
       return res.status(400).json({
         ok: false,
-        error: "Esto no es un fichero de exportación del Cable Tester 32.",
+        error: "Esto no es un archivo de exportación del Cable Tester 32.",
       });
     }
     if (Number(bundle.version) > VERSION) {
       return res.status(400).json({
         ok: false,
-        error: `El fichero es de una versión más nueva (v${bundle.version}) que esta app (v${VERSION}). Actualiza la app antes de importar.`,
+        error: `El archivo es de una versión más nueva (v${bundle.version}) que esta app (v${VERSION}). Actualiza la app antes de importar.`,
       });
     }
 
@@ -260,10 +260,10 @@ export function registrarDatosRoutes(app) {
       // Lo que identifica de verdad a un job es su SKU y su huella: misma
       // receta sobre el mismo cableado. Si ya esta, se actualiza en su sitio;
       // si no, entra con id nuevo. Y despues se garantiza uno aprobado por SKU.
-      const jobsDelFichero = Array.isArray(bundle.tablas?.jobs) ? bundle.tablas.jobs : [];
+      const jobsDelArchivo = Array.isArray(bundle.tablas?.jobs) ? bundle.tablas.jobs : [];
       const colsJob = db.prepare("PRAGMA table_info(jobs)").all().map((c) => c.name);
       let jobsNuevos = 0, jobsActualizados = 0;
-      for (const j of jobsDelFichero) {
+      for (const j of jobsDelArchivo) {
         const ya = db.prepare("SELECT id FROM jobs WHERE sku = ? AND huella IS ? AND golden IS ?")
                      .get(j.sku, j.huella ?? null, j.golden ?? null);
         const usadas = colsJob.filter((c) => c in j && c !== "id");
@@ -317,7 +317,7 @@ export function registrarDatosRoutes(app) {
       });
     }
 
-    // Los ficheros van fuera de la transaccion: SQLite no los cubre.
+    // Los archivos van fuera de la transaccion: SQLite no los cubre.
     resumen.goldens  = escribirJsonDir(GOLD_DIR, bundle.goldens);
     resumen.fixtures = escribirJsonDir(FIX_DIR,  bundle.fixtures);
 

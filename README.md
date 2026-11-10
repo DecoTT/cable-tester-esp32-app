@@ -131,7 +131,7 @@ El código viaja por git; los datos **no**. Para montar una estación nueva:
 2. En la estación de origen: **Configuración → Datos de la estación → Exportar**.
    Sale un `.ct32.json` con SKUs, jobs, goldens, sockets, equipos, operadores,
    ajustes y —si se quiere— el historial de producción.
-3. En la nueva: **Importar** ese fichero.
+3. En la nueva: **Importar** ese archivo.
 
 Lo que **no** viaja, a propósito:
 
@@ -143,7 +143,7 @@ Importar **reemplaza** por clave primaria, así que antes copia la base en
 `data/backups/`. Si algo falla a mitad, se deshace entera: una importación a
 medias es peor que ninguna, porque parece que funcionó.
 
-> Los goldens viajan **dentro** del fichero, no por referencia. Un job sin su
+> Los goldens viajan **dentro** del archivo, no por referencia. Un job sin su
 > golden no puede juzgar ninguna pieza.
 
 ---
@@ -197,7 +197,7 @@ La pantalla no hace falta para que dispare —el bridge guarda el producto y el
 operador activos en `settings`— pero si no hay ninguno de los dos, avisa y no
 prueba: una pieza sin operador no es trazable.
 
-Si alguien dice «pulsé y no pasó nada», la respuesta está en la consola del
+Si alguien dice «presioné y no pasó nada», la respuesta está en la consola del
 bridge: cada pulsación deja una línea `[boton] …`.
 
 ---
@@ -225,15 +225,15 @@ que para eso se pide.
 
 **Diagnóstico** responde a dos preguntas que el veredicto no contesta:
 
-- *¿Abierto o pegado a masa?* En el mapa se ven **igual** —los dos salen como
-  canal aislado— y se arreglan distinto: un abierto es un crimp, un corto a masa
+- *¿Abierto o pegado a tierra?* En el mapa se ven **igual** —los dos salen como
+  canal aislado— y se arreglan distinto: un abierto es un crimp, un corto a tierra
   es un pin corrido o una rebaba. Se eligen una pieza fallida y se **mide otra
   vez** sobre el tester, con el arnés puesto. Medido: 32 canales en 2,1 s.
 - *¿Dónde duele?* Las líneas que más fallan, agrupadas **por línea y no por
   pieza**: repetirse en la misma es utillaje, repartirse es proceso.
 
 Dentro de Diagnóstico, el botón **Avanzado** abre el *osciloscopio lento*:
-voltios reales por línea, una gráfica por cada línea del golden.
+volts reales por línea, una gráfica por cada línea del golden.
 
 **No es integridad de señal.** El techo medido son **3,09 ms por muestra**
 (~324 muestras/s), porque cada lectura del ADC promedia 64. No hay diagrama de
@@ -262,7 +262,7 @@ por el asistente de SKU **en la misma sesión**. Entrar directo daba
 dice nada a quien está en planta con la punta en la mano.
 
 Ahora los equipos se eligen en la propia pestaña, en el orden del montaje, y se
-abren al pulsar **Escuchar**. Si el SKU ya tiene golden, se proponen los suyos.
+abren al presionar **Escuchar**. Si el SKU ya tiene golden, se proponen los suyos.
 
 ### Sin producto: equipos sueltos
 

@@ -98,7 +98,7 @@ export function registerSkuRoutes(app) {
     ).get(req.params.codigo);
     if (!job?.golden) return res.status(404).json({ ok: false, error: "ese SKU no tiene golden aprobado" });
     const gp = path.join(DATA_DIR, "goldens", `${job.golden}.json`);
-    if (!fs.existsSync(gp)) return res.status(404).json({ ok: false, error: "falta el fichero del golden" });
+    if (!fs.existsSync(gp)) return res.status(404).json({ ok: false, error: "falta el archivo del golden" });
     const g = JSON.parse(fs.readFileSync(gp, "utf8"));
 
     const propuesta = (g.resistencias ?? []).map((x) => ({

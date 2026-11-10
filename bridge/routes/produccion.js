@@ -148,7 +148,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       }
 
       const gp = path.join(GOLD_DIR, `${job.golden}.json`);
-      if (!fs.existsSync(gp)) throw new Error(`falta el fichero de golden "${job.golden}"`);
+      if (!fs.existsSync(gp)) throw new Error(`falta el archivo de golden "${job.golden}"`);
       const g = JSON.parse(fs.readFileSync(gp, "utf8"));
       const fixture = g.fixture ? cargarFixture(g.fixture) : null;
 
@@ -394,7 +394,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
     res.json({ etiquetas: historialEtiquetas(null) });
   });
 
-  // Servir el PDF guardado. Se sirve por nombre de fichero y no por ruta para
+  // Servir el PDF guardado. Se sirve por nombre de archivo y no por ruta para
   // que la UI no pueda pedir cualquier cosa del disco.
   app.get("/api/labels/file/:nombre", (req, res) => {
     const seguro = path.basename(req.params.nombre);
@@ -439,15 +439,15 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   //
   // El veredicto dice QUE falló; esto dice POR QUE y DONDE duele mas.
 
-  // Abierto o pegado a masa: el mapa NO los distingue.
+  // Abierto o pegado a tierra: el mapa NO los distingue.
   //
   // Un canal pegado a GND nunca sigue al driver, asi que sale "aislado"
   // exactamente igual que un cable roto. Para quien repara la diferencia lo es
-  // todo: un abierto es un crimp mal hecho, un corto a masa es un pin corrido o
+  // todo: un abierto es un crimp mal hecho, un corto a tierra es un pin corrido o
   // una rebaba, y se arreglan distinto.
   //
   // Se excita un extremo dejando el otro en alta impedancia y se mira la
-  // tension: si el excitado BAJA, hay una R a masa; si el otro se queda a cero
+  // tension: si el excitado BAJA, hay una R a tierra; si el otro se queda a cero
   // pero el excitado se mantiene, esta abierto.
   //
   // Reserva las mismas unidades que la prueba de produccion: son las mismas
@@ -497,7 +497,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
           ...r,
           fisico: nombreFisico(gch, units, fixture).texto,
           consejo: r.tipo === "gnd"
-            ? "Pegado a masa: pin corrido, rebaba o hilo pinzado. No es un crimp."
+            ? "Pegado a tierra (GND): pin corrido, rebaba o hilo pinzado. No es un crimp."
             : r.tipo === "abierto"
               ? "Abierto: crimp mal hecho, hilo cortado o contacto fuera del alojamiento."
               : "No se pudo medir este canal.",
@@ -530,9 +530,9 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   /**
    * Qué corre el botón de ESTE equipo.
    *
-   * El SKU sale del EQUIPO que se pulsó, no de lo que haya en pantalla. Pulsar
+   * El SKU sale del EQUIPO que se presionó, no de lo que haya en pantalla. Presionar
    * el botón de la 2898 corría el job de la 8744 porque se usaba el SKU activo
-   * a secas: el operador pulsaba en un puesto y se medía otro.
+   * a secas: el operador presionaba en un puesto y se medía otro.
    *
    * Un mismo equipo puede tener varios SKU aprobados, así que hay orden de
    * preferencia — y si no se puede decidir, NO se inventa: se avisa. Arrancar
@@ -623,14 +623,14 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   const vigilancia = new Map();   // mac -> { presses, host, proximo }
   let sondeando = false;
 
-  // ── Ordenar los equipos pulsando su boton ──────────────────
+  // ── Ordenar los equipos presionando su boton ──────────────────
   //
   // El orden de montaje (M, L1, L2) define los nombres de canal, asi que
   // elegirlo mal no da ningun error: simplemente hace que los informes
   // senalen el conector equivocado. Y elegirlo bien desde la pantalla exige
   // saber que caja es "424C", que nadie sabe mientras no haya etiquetas.
   //
-  // Asi que se ordena tocando el hardware: se pulsa el boton de la caja que va
+  // Asi que se ordena tocando el hardware: se presiona el boton de la caja que va
   // en M, luego el de L1, luego el de L2. El orden de las pulsaciones ES el
   // orden del montaje, y no hay nada que recordar ni que traducir.
   //
@@ -663,8 +663,8 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       return res.json({ ok: true, segundos, modo, aviso: null });
     }
 
-    // Modo "reset": se pulsa SW2, que es el reset por hardware del modulo. La
-    // caja que arranque de nuevo es la que se pulso, y eso se ve desde aqui
+    // Modo "reset": se presiona SW2, que es el reset por hardware del modulo. La
+    // caja que arranque de nuevo es la que se presiono, y eso se ve desde aqui
     // porque el uptime vuelve a cero. Es el UNICO orden por hardware que
     // funciona en una placa sin cablear: el boton de disparo (IO4) hay que
     // soldarlo, y SW1 no se puede tocar porque cuelga de IO9, que es SDA.
@@ -684,7 +684,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       }
       // Una caja recien encendida arranca con el uptime bajo, pero eso NO es una
       // pulsacion: la referencia se toma AHORA, y solo cuenta lo que baje desde
-      // aqui. Sin esto, reconectar una y pulsar otra dan el mismo resultado.
+      // aqui. Sin esto, reconectar una y presionar otra dan el mismo resultado.
       emit("orden:captura", { abierta: true, segundos, modo });
       return res.json({
         ok: true, segundos, modo,
@@ -694,7 +694,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
       });
     }
 
-    // Un equipo en modo "local" se lanzaria a probar en cuanto se pulse. Se
+    // Un equipo en modo "local" se lanzaria a probar en cuanto se presione. Se
     // dice ANTES, no despues de que alguien se lleve el susto.
     const locales = [];
     for (const u of db.prepare("SELECT mac, unit, ip FROM tester_units").all()) {
@@ -704,11 +704,11 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         const r = await fetch(`http://${host}/api/status`, { signal: AbortSignal.timeout(1500) });
         const st = await r.json();
         if (st?.trigger?.mode === "local") locales.push(st.unit || u.unit);
-      } catch { /* apagado: ya se vera cuando se pulse */ }
+      } catch { /* apagado: ya se vera cuando se presione */ }
     }
     if (locales.length) {
       captura.aviso = `${locales.join(", ")} tiene el disparador en modo "local": ` +
-        "al pulsarlo va a probar por su cuenta. Pasalo a \"avisar\" para ordenarlo con el boton.";
+        "al presionarlo va a probar por su cuenta. Pasalo a \"avisar\" para ordenarlo con el boton.";
     }
 
     emit("orden:captura", { abierta: true, segundos, modo });
@@ -718,7 +718,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   /**
    * "¿Esta cual es?" — para pegar las etiquetas.
    *
-   * No ordena nada: se pulsa SW2 en una caja cualquiera y contesta quien es.
+   * No ordena nada: se presiona SW2 en una caja cualquiera y contesta quien es.
    * Es lo que hace falta con tres cajas iguales delante y tres etiquetas
    * impresas en la mano.
    *
@@ -778,7 +778,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         if (prev) prev.up = v.up; else base.set(unit, v);
       }
     }
-    res.json({ ok: false, error: "nadie pulso SW2" });
+    res.json({ ok: false, error: "nadie presionó SW2" });
   });
 
   app.get("/api/testers/orden", (_req, res) => {
@@ -804,7 +804,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
 
   // Confirmacion en el propio equipo: destella su numero de posicion. Sin
   // esto no se distingue "no conto mi pulsacion" de "la conto y la pantalla
-  // no se ha refrescado", que es justo la duda que hace pulsar dos veces.
+  // no se ha refrescado", que es justo la duda que hace presionar dos veces.
   // Vigilante de la punta. Solo corre mientras hay captura en modo "punta":
   // el resto del tiempo nadie pregunta nada a nadie.
   let mirandoPunta = false;
@@ -969,7 +969,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
         const operador = decision.operador;
         const hostsJob = hostsDelJob(decision.job);
 
-        // Tambien a consola: "pulse el boton y no paso nada" hay que poder
+        // Tambien a consola: "presione el boton y no paso nada" hay que poder
         // diagnosticarlo sin un navegador abierto mirando eventos.
         console.log(`[boton] ${st.unit} pulsado (${t.presses}) -> ${sku} / ${operador}`);
         emit("boton:pulsado", { unidad: st.unit, sku, operador });
@@ -1162,7 +1162,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
     res.json({ ok: true });
   });
 
-  // Que haria cada boton si se pulsara AHORA. Se puede comprobar sin pulsar.
+  // Que haria cada boton si se presionara AHORA. Se puede comprobar sin presionar.
   app.get("/api/boton/estado", (_req, res) => {
     res.json({
       ok: true,
@@ -1257,7 +1257,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   };
   const conUnidadesDelSku = (sku, fn, res) => conUnidades({ sku }, fn, res);
 
-  // Una linea: onda cuadrada y voltios reales.
+  // Una linea: onda cuadrada y volts reales.
   app.post("/api/avanzado/onda", (req, res) => {
     const { sku, hosts, a, b, ciclos } = req.body ?? {};
     conUnidades({ sku, hosts }, async ({ units, res: r }) => {
@@ -1323,7 +1323,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
    * un socket recien cableado, un arnes a medio rutear. No dice "bien" ni
    * "mal" —no hay contra que compararlo— dice QUE VE.
    *
-   * Sirve tambien para el caso feo: con una placa con canales pegados a masa,
+   * Sirve tambien para el caso feo: con una placa con canales pegados a tierra,
    * aqui se ven como aislados y se sabe antes de perder tiempo cableando.
    */
   app.post("/api/avanzado/barrido", (req, res) => {
@@ -1354,7 +1354,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   /**
    * Salud de los modulos, SIN arnes conectado.
    *
-   * Un canal pegado a masa y un cable roto se ven IGUAL en el mapa: los dos
+   * Un canal pegado a tierra y un cable roto se ven IGUAL en el mapa: los dos
    * salen como aislado. Por eso esto se mide con el arnes FUERA — asi lo que
    * salga mal es de la placa, sin ambiguedad.
    */

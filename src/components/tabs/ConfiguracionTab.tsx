@@ -59,7 +59,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   const [importando, setImportando] = useState(false);
   const [detalle, setDetalle] = useState<TesterUnit | null>(null);
 
-  // ── Identificar una caja pulsando SW2 ────────────────────────────────
+  // ── Identificar una caja presionando SW2 ────────────────────────────────
   //
   // Tres cajas iguales sobre la mesa y tres etiquetas impresas en la mano: la
   // pregunta no es "donde esta la 700C", es "esta cual es". SW2 la reinicia y
@@ -67,7 +67,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
   // soldado. El boton de disparo (IO4) hay que soldarlo y SW1 no se puede
   // tocar: cuelga de IO9, que es SDA del I2C.
   // El resultado se queda FIJO en la pantalla hasta que se cierra. Un aviso que
-  // se desvanece no sirve aqui: entre que se pulsa SW2 y se mira la pantalla,
+  // se desvanece no sirve aqui: entre que se presiona SW2 y se mira la pantalla,
   // se tiene la caja en una mano y la etiqueta en la otra.
   const [esperandoSW2, setEsperandoSW2] = useState(false);
   const [quedan, setQuedan] = useState(0);
@@ -111,7 +111,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
       const texto = await file.text();
       let bundle: unknown;
       try { bundle = JSON.parse(texto); }
-      catch { return toast({ title: "Fichero ilegible", description: "No es un JSON válido.", variant: "destructive" }); }
+      catch { return toast({ title: "Archivo ilegible", description: "No es un JSON válido.", variant: "destructive" }); }
 
       const r = await api.datos.importar(bundle);
       if (!r.ok) return toast({ title: "No se importó", description: r.error, variant: "destructive" });
@@ -184,17 +184,17 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" disabled={esperandoSW2}
                           onClick={identificarPorSW2}>
-                    {esperandoSW2 ? `Esperando SW2… ${quedan}s` : "¿Cuál es cuál? Pulsa SW2"}
+                    {esperandoSW2 ? `Esperando SW2… ${quedan}s` : "¿Cuál es cuál? Presiona SW2"}
                   </Button>
                   <span className="text-xs text-gray-500">
-                    Pulsa <span className="font-mono">SW2</span> (el de <span className="font-mono">EN</span>)
+                    Presiona <span className="font-mono">SW2</span> (el de <span className="font-mono">EN</span>)
                     en una caja y te digo cuál es, para pegarle su etiqueta. Se reinicia; no pierde nada.
                   </span>
                 </div>
 
                 {esperandoSW2 && (
                   <div className="rounded-lg border-2 border-blue-400 bg-blue-50 text-blue-900 p-3">
-                    <div className="font-medium">Pulsa SW2 ahora, en la caja que quieras identificar.</div>
+                    <div className="font-medium">Presiona SW2 ahora, en la caja que quieras identificar.</div>
                     <div className="text-sm mt-0.5">
                       Es el pulsador de <span className="font-mono">EN</span>, no el otro.
                       Tarda ~10 s en volver a la red; hasta entonces no puedo decirte cuál es.
@@ -207,7 +207,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                   <div className="rounded-lg border-2 border-amber-500 bg-amber-50 p-3 flex items-start justify-between gap-3">
                     <div>
                       <div className="text-lg font-semibold text-amber-900">
-                        La que pulsaste es {identificada.unidad}
+                        La que presionaste es {identificada.unidad}
                       </div>
                       <div className="text-sm text-amber-800 font-mono">
                         {identificada.mac ?? identificada.ip}
@@ -240,7 +240,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                     <div>
                       <div className="font-medium">No detecté ningún reinicio: {falloSW2}.</div>
                       <div className="text-sm mt-0.5">
-                        Si pulsaste y no lo vi, es que esa caja no está registrada en esta estación,
+                        Si presionaste y no lo vi, es que esa caja no está registrada en esta estación,
                         o tardó más de un minuto en volver a la red.
                       </div>
                     </div>
@@ -543,7 +543,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
           <CardTitle className="flex items-center gap-2"><Database className="w-5 h-5" /> Datos de la estación</CardTitle>
           <p className="text-sm text-gray-600">
             El código se distribuye por git; los datos <strong>no</strong>. SKUs, goldens,
-            sockets, equipos y producción viajan en este fichero, que se importa en la
+            sockets, equipos y producción viajan en este archivo, que se importa en la
             PC de planta después de ejecutar <span className="font-mono">setup.bat</span>.
           </p>
         </CardHeader>
@@ -620,7 +620,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                 <input type="file" accept=".json,.ct32.json,application/json" className="hidden"
                        onChange={(e) => {
                          const f = e.target.files?.[0];
-                         e.target.value = "";   // permite reimportar el mismo fichero
+                         e.target.value = "";   // permite reimportar el mismo archivo
                          if (f) importar(f);
                        }} />
               </label>
@@ -629,7 +629,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
 
           <p className="text-xs text-amber-700">
             Importar <strong>reemplaza</strong> lo que coincida por código: un SKU con el
-            mismo código queda con los datos del fichero. Antes de tocar nada se guarda
+            mismo código queda con los datos del archivo. Antes de tocar nada se guarda
             una copia de la base en <span className="font-mono">data/backups/</span>.
           </p>
         </CardContent>

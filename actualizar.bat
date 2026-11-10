@@ -35,9 +35,9 @@ if not exist ".git" (
 rem Codigo editado a mano: actualizar lo perderia. Se para aqui y se avisa, en
 rem vez de descubrirlo cuando el pull falle a medias.
 rem
-rem --untracked-files=no a proposito: solo cuentan los ficheros que git SIGUE.
+rem --untracked-files=no a proposito: solo cuentan los archivos que git SIGUE.
 rem Los datos de la estacion -base, goldens, fixtures, etiquetas, respaldos-
-rem estan en .gitignore y el pull NO los toca. Un fichero suelto en la carpeta
+rem estan en .gitignore y el pull NO los toca. Un archivo suelto en la carpeta
 rem de datos saldria como "?? data/" y bloquearia la actualizacion por nada.
 set "SUCIO="
 for /f "delims=" %%L in ('git status --porcelain --untracked-files^=no') do set "SUCIO=1"

@@ -19,9 +19,9 @@ import { useToast } from "@/hooks/use-toast";
 //
 // DOS COSAS QUE EL MAPA NO PUEDE DECIR POR SÍ SOLO
 //
-// 1. Un canal pegado a masa y un cable roto salen EXACTAMENTE IGUAL: los dos
+// 1. Un canal pegado a tierra y un cable roto salen EXACTAMENTE IGUAL: los dos
 //    como "aislado". Para quien repara la diferencia lo es todo — un abierto es
-//    un crimp mal hecho, un corto a masa es un pin corrido o una rebaba. Se
+//    un crimp mal hecho, un corto a tierra es un pin corrido o una rebaba. Se
 //    distinguen con una medida analógica suelta, que es lo que hace el botón
 //    "Clasificar": excita un extremo dejando el otro en alta impedancia y mira
 //    si la tensión se mantiene o cae.
@@ -125,7 +125,7 @@ export default function DiagnosticoTab({ skuActivo, equipo }: { skuActivo: strin
             <Stethoscope className="w-6 h-6" /> Diagnóstico
           </h2>
           <p className="text-gray-600">
-            Qué falla, dónde, y de qué tipo. Un abierto y un corto a masa se ven
+            Qué falla, dónde, y de qué tipo. Un abierto y un corto a tierra (GND) se ven
             igual en el mapa y se arreglan distinto.
           </p>
           {laDelEquipo && (
@@ -147,7 +147,7 @@ export default function DiagnosticoTab({ skuActivo, equipo }: { skuActivo: strin
       {avanzado && (
         <Card>
           <CardHeader>
-            <CardTitle>Avanzado — voltios reales por línea</CardTitle>
+            <CardTitle>Avanzado — volts reales por línea</CardTitle>
             <p className="text-sm text-gray-600">
               {sku
                 ? <>Sobre <b>{sku}</b>, con las unidades y el orden de su golden.</>
@@ -246,10 +246,10 @@ export default function DiagnosticoTab({ skuActivo, equipo }: { skuActivo: strin
           </CardContent>
         </Card>
 
-        {/* ── Abierto o masa ── */}
+        {/* ── Abierto o tierra ── */}
         <Card>
           <CardHeader>
-            <CardTitle>Abierto o pegado a masa</CardTitle>
+            <CardTitle>Abierto o pegado a tierra (GND)</CardTitle>
             <p className="text-sm text-gray-600">
               Elige una pieza fallida y mídela. <strong>Con el arnés puesto en el
               tester</strong>: esto no lee el historial, mide de nuevo.
@@ -297,7 +297,7 @@ export default function DiagnosticoTab({ skuActivo, equipo }: { skuActivo: strin
                     <AlertDescription>
                       <div className="font-medium">
                         {c.fisico || c.canal} —{" "}
-                        {c.tipo === "gnd" ? "PEGADO A MASA" : c.tipo === "abierto" ? "ABIERTO" : "no medible"}
+                        {c.tipo === "gnd" ? "PEGADO A TIERRA (GND)" : c.tipo === "abierto" ? "ABIERTO" : "no medible"}
                         {typeof c.v === "number" && (
                           <span className="font-mono text-xs text-gray-500"> ({c.v.toFixed(3)} V)</span>
                         )}

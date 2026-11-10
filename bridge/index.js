@@ -37,7 +37,7 @@ const server = http.createServer(app);
 const io = new SocketIO(server, { cors: { origin: "*" } });
 
 app.use(cors());
-// 2 MB sobra para todo... menos para importar una estacion entera: ese fichero
+// 2 MB sobra para todo... menos para importar una estacion entera: ese archivo
 // lleva goldens e historial y se va a decenas de MB. Se excluye de este parser
 // y la ruta de importacion pone el suyo, mas amplio.
 app.use((req, res, next) =>

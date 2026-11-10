@@ -173,10 +173,10 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
   const alternar = (ip: string) =>
     setEquipos((x) => x.includes(ip) ? x.filter((y) => y !== ip) : [...x, ip]);
 
-  // ── Ordenar pulsando el boton de cada caja ───────────────────────────
+  // ── Ordenar presionando el boton de cada caja ───────────────────────────
   //
   // Elegir el orden desde la pantalla obliga a saber que caja es "424C", y
-  // nadie lo sabe mientras no haya etiquetas pegadas. Pulsando el boton de la
+  // nadie lo sabe mientras no haya etiquetas pegadas. Presionando el boton de la
   // que va en M, luego la de L1, luego la de L2, el orden sale del hardware:
   // no hay nada que recordar. El equipo destella su numero de posicion para
   // que no haya que fiarse de la pantalla.
@@ -208,8 +208,8 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
       setCapturando(true); setResta(d.segundos);
       toast({
         title: modo === "punta" ? "Toca un pin de cada caja, en orden"
-             : modo === "reset" ? "Pulsa SW2 en cada caja, en orden"
-             : "Pulsa los botones en orden",
+             : modo === "reset" ? "Presiona SW2 en cada caja, en orden"
+             : "Presiona los botones en orden",
         description: d.aviso ?? (
           modo === "punta"
             ? "Con el arnés DESCONECTADO: un pin cualquiera del socket que va en M, luego L1, luego L2."
@@ -476,7 +476,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                 <div className="flex items-center gap-1">
                 {capturando
                   ? <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={cerrarCaptura}>
-                      Pulsando… {resta}s — terminar
+                      Presionando… {resta}s — terminar
                     </Button>
                   : <>
                       <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={corriendo}
@@ -514,14 +514,14 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                 <div className="text-sm rounded border border-blue-200 bg-blue-50 text-blue-900 p-2 mt-1">
                   {pulsadas.length === 0
                     ? (modoOrden === "reset"
-                        ? <>Pulsa <strong>SW2</strong> (el de <span className="font-mono">EN</span>) en el
+                        ? <>Presiona <strong>SW2</strong> (el de <span className="font-mono">EN</span>) en el
                             equipo que va en <strong>M</strong>. Se reinicia y vuelve en ~10 s;
                             al contarse destella su número de posición.</>
                         : modoOrden === "punta"
                         ? <>Toca con la punta un pin cualquiera del socket del equipo que va en
                             <strong> M</strong>, con el <strong>arnés desconectado</strong>. Cada uno
                             destella su número de posición al contarse.</>
-                        : <>Pulsa el botón del equipo que va en <strong>M</strong>. Cada uno destella
+                        : <>Presiona el botón del equipo que va en <strong>M</strong>. Cada uno destella
                             su número de posición al contarse.</>)
                     : <>{pulsadas.map((p) => `${p.posicion} = ${p.unit}`).join("  ·  ")}
                         {pulsadas.length < (enRed.data ?? []).length &&
@@ -581,7 +581,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
 
             {aviso && !enCurso && (
               <div className="text-sm rounded border border-blue-200 bg-blue-50 text-blue-900 p-2">
-                {aviso} Pon su nombre arriba y pulsa <strong>Empezar</strong>.
+                {aviso} Pon su nombre arriba y presiona <strong>Empezar</strong>.
               </div>
             )}
 
@@ -590,7 +590,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
                 <span className="font-medium">Con continuidad, no acoplamiento:</span>{" "}
                 {puentes.map((p) => `${p.canal}${p.ohm != null ? ` (~${p.ohm} Ω)` : ""}`).join(", ")}
                 <div className="text-red-800 mt-0.5">
-                  Estos pines siguen arriba aunque se fuercen a masa: hay camino de continua.
+                  Estos pines siguen arriba aunque se fuercen a tierra (GND): hay camino de continua.
                   No son fantasmas — revisa el socket.
                 </div>
               </div>

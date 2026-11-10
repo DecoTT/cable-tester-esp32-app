@@ -175,7 +175,7 @@ export const api = {
         "/api/testers/identificar",
         { method: "POST", body: JSON.stringify({ hosts, segundos }) }),
 
-    // Ordenar los equipos pulsando su boton: el orden de las pulsaciones es el
+    // Ordenar los equipos presionando su boton: el orden de las pulsaciones es el
     // orden del montaje. Mientras la captura esta abierta no lanzan prueba.
     capturarOrden: (segundos = 90, modo: "boton" | "punta" | "reset" = "boton") =>
       j<{ ok: boolean; segundos: number; modo: string; aviso: string | null }>(
@@ -191,7 +191,7 @@ export const api = {
 
     cerrarOrden: () => j<{ ok: boolean }>("/api/testers/orden", { method: "DELETE" }),
 
-    // "¿Esta cual es?": se pulsa SW2 y contesta quien es. Para pegar etiquetas.
+    // "¿Esta cual es?": se presiona SW2 y contesta quien es. Para pegar etiquetas.
     // Espera bloqueando: no hay que sondear.
     quienEs: (segundos = 60) =>
       j<{ ok: boolean; mac?: string | null; unidad?: string; ip?: string;
@@ -458,7 +458,7 @@ export const api = {
       return j<{ patrones: PatronFallo[]; piezas_fallidas: number; piezas_total: number }>(
         `/api/diagnostico/patrones?${p}`);
     },
-    // Mide de verdad sobre el tester: distingue abierto de pegado a masa.
+    // Mide de verdad sobre el tester: distingue abierto de pegado a tierra.
     clasificar: (test_id: number) =>
       j<{ ok: boolean; resultados: Clasificacion2[]; sin_abiertos?: boolean; error?: string }>(
         "/api/diagnostico/clasificar", { method: "POST", body: JSON.stringify({ test_id }) }),
@@ -479,7 +479,7 @@ export const api = {
       goldens: number; fixtures: number;
     }>("/api/datos/resumen"),
     // Descarga directa: la hace el navegador, no fetch, para que salga el
-    // dialogo de guardar y el fichero no tenga que pasar por memoria.
+    // dialogo de guardar y el archivo no tenga que pasar por memoria.
     // Sin `skus` exporta todo, que es el caso normal. Con una lista, solo esos
     // productos: con varias PC muchas veces solo hay que pasar UN job.
     urlExportar: (historial: boolean, skus: string[] = []) =>

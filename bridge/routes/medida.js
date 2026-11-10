@@ -112,7 +112,7 @@ export function registerMedidaRoutes(app, io) {
     });
   }));
 
-  // Clasifica un aislado: abierto o pegado a masa. El mapa no los distingue.
+  // Clasifica un aislado: abierto o pegado a tierra. El mapa no los distingue.
   app.post("/api/medida/clasificar", exclusivo(async (req, res) => {
     if (!exigirUnidades(res)) return;
     const gs = req.body?.canales ?? [];
@@ -133,7 +133,7 @@ export function registerMedidaRoutes(app, io) {
   // ── Golden ─────────────────────────────────────────────────
   //
   // Tres barreras, y cada una ve lo que las otras no:
-  //   modulos     -> canales a masa en las placas
+  //   modulos     -> canales a tierra en las placas
   //   resistencia -> contactos flojos que el mapa da por buenos
   //   esperadas   -> hilos que FALTAN (una linea ausente no tiene R que medir)
   app.post("/api/medida/golden", exclusivo(async (req, res) => {

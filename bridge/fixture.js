@@ -225,7 +225,7 @@ export class SesionSocket {
 
           // SIN CONECTOR ABIERTO NO SE ANOTA NADA.
           //
-          // La sesion empieza a escuchar al pulsar "Escuchar", y el conector se
+          // La sesion empieza a escuchar al presionar "Escuchar", y el conector se
           // abre despues — el tiempo que se tarda en teclear su nombre. Si en
           // ese hueco la punta esta tocando algo, el canal se marcaba como
           // visto y quedaba GASTADO: al abrir el conector ya no se podia
@@ -262,14 +262,14 @@ export class SesionSocket {
             // eso no es un fantasma: es un defecto. Descartarlo en silencio
             // seria esconder justo lo que hay que encontrar.
             //
-            // Se decide midiendo: se fuerza el canal a masa y se mira si puede
+            // Se decide midiendo: se fuerza el canal a tierra y se mira si puede
             // bajarlo. El acoplamiento es capacitivo y no tiene quien lo
             // sostenga; una union si.
             const v = await u.vinculo(b);
             if (v.unido) {
               this.emit({
                 tipo: "puente", canal: interno, mv, mv_forzado: v.mv, ohm: v.ohm,
-                mensaje: `${interno} NO es acoplamiento: sigue arriba al forzarlo a masa ` +
+                mensaje: `${interno} NO es acoplamiento: sigue arriba al forzarlo a tierra (GND) ` +
                          `(${v.mv} mV). Hay continuidad, unos ${v.ohm} Ω. Revisa ese pin.`,
               });
             } else {

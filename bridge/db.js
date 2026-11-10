@@ -214,7 +214,7 @@ function añadirColumna(tabla, columna, definicion) {
 añadirColumna("jobs", "hosts",     "TEXT NOT NULL DEFAULT '[]'");   // orden de unidades
 añadirColumna("jobs", "esperadas", "INTEGER");                      // conexiones que aprueba ingenieria
 añadirColumna("jobs", "huella",    "TEXT");                         // md5 del barrido
-añadirColumna("jobs", "golden",    "TEXT");                         // fichero de golden asociado
+añadirColumna("jobs", "golden",    "TEXT");                         // archivo de golden asociado
 
 // Una prueba de un puesto secundario puede no tener operador ni lote. Se
 // registra igual y se marca: 0 = completa, 1 = parcial.

@@ -129,7 +129,7 @@ export class Unit {
    * un fantasma, es un defecto que hay que ver.
    *
    * Lo que si los separa es que el acoplamiento es CAPACITIVO: no hay camino de
-   * continua. Asi que se fuerza el canal a masa y se mira si puede bajarlo:
+   * continua. Asi que se fuerza el canal a tierra y se mira si puede bajarlo:
    *
    *   · acoplado  -> no hay quien lo sostenga, cae a ~0 V
    *   · unido     -> la fuente lo sigue tirando arriba y se queda a medias
@@ -151,7 +151,7 @@ export class Unit {
     const r = await this.raw([
       `io_dir ${u} ${(0xffff & ~(1 << bit)) >>> 0}`,   // solo este, salida
       `io_dir ${1 - u} 0xFFFF`,
-      `io_wr  ${u} 0x0000`,                            // y a masa
+      `io_wr  ${u} 0x0000`,                            // y a tierra
       "delay_us 3000",
       `adc_rd ${lado} ${ch % 16}`,
     ]);
@@ -205,7 +205,7 @@ export class Unit {
     ]);
   }
 
-  /** ADC del canal local, en voltios. Crudo, sin corregir ganancia. */
+  /** ADC del canal local, en volts. Crudo, sin corregir ganancia. */
   async volts(ch) {
     const side = ch < 16 ? 0 : 1;
     const r = await this.raw([`adc_rd ${side} ${ch % 16}`]);
@@ -251,7 +251,7 @@ export class Unit {
    *    camino nuevo, y ya paso: de los cinco sitios que sueltan el bus
    *    (barrido, resistencias, modulos, clasificar aislado, socket) solo el
    *    barrido lo apagaba.
-   *  - De ultimo porque rgb_off hace Wire.end() y Wire.begin(): pulsar IO8 a
+   *  - De ultimo porque rgb_off hace Wire.end() y Wire.begin(): tocar IO8 a
    *    mitad de una secuencia corromperia la transaccion en curso.
    *  - En la MISMA peticion que el release, no en otra: no cuesta ni un
    *    viaje de red extra.
@@ -562,7 +562,7 @@ export async function validarModulos(units, onProgress) {
 }
 
 /**
- * Clasifica un canal aislado: abierto o pegado a masa.
+ * Clasifica un canal aislado: abierto o pegado a tierra.
  *
  * El mapa NO los distingue — los dos salen como "aislado". Para el operador la
  * diferencia lo es todo: un abierto es un crimp mal hecho, un corto a GND es un

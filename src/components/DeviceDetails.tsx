@@ -41,14 +41,14 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
   const { toast } = useToast();
   const [info, setInfo] = useState<Awaited<ReturnType<typeof api.testers.trigger>> | null>(null);
   // Que lanzaria el boton de ESTE equipo. Lo decide el bridge mirando a que
-  // jobs pertenece la unidad, no lo que haya en pantalla: pulsar aqui no puede
+  // jobs pertenece la unidad, no lo que haya en pantalla: presionar aqui no puede
   // arrancar el producto de otro puesto.
   const [queCorre, setQueCorre] = useState<{ correria: string | null; motivo: string | null; candidatos: string[] } | null>(null);
 
   // ── El job que lleva DENTRO el equipo ────────────────────────────────
   //
   // Distinto del job que corre la PC: este vive en la NVS del ESP32 y es lo
-  // que le permite juzgar una pieza sin ordenador. Se lee del equipo, no de la
+  // que le permite juzgar una pieza sin computadora. Se lee del equipo, no de la
   // base: lo que importa es lo que TIENE, no lo que creemos haberle mandado.
   const [golden, setGolden] = useState<any>(null);
   const [jobElegido, setJobElegido] = useState<string>("");
@@ -105,7 +105,7 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
   // Borrador local: lo que el operador está eligiendo, todavía sin mandar.
   const [activo, setActivo] = useState(false);
   const [pin, setPin] = useState<number>(4);
-  // Normalmente abierto = el pulsador solo cierra el circuito al pulsarlo, que
+  // Normalmente abierto = el pulsador solo cierra el circuito al presionarlo, que
   // es lo normal. Cableado entre el pin y GND, el pull-up interno mantiene el
   // pin en ALTO y la pulsacion lo lleva a BAJO: por eso NO equivale a "activo
   // en BAJO". Se nombra como en planta, no como en el firmware.
@@ -147,8 +147,8 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
           description: activo
             ? `${normalmenteAbierto ? "Normalmente abierto" : "Normalmente cerrado"}. ` +
               (modo === "avisar"
-                ? "Al pulsarlo, la app corre la prueba del SKU que esté puesto."
-                : "Al pulsarlo, el equipo corre su prueba interna.")
+                ? "Al presionarlo, la app corre la prueba del SKU que esté puesto."
+                : "Al presionarlo, el equipo corre su prueba interna.")
             : "Este equipo ya no responde a ningún switch físico.",
         });
       }
@@ -264,12 +264,12 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
                 <p className="text-xs text-gray-500 mt-1">
                   Cableado entre el pin y <b>GND</b>, sin resistencia: la de pull-up la
                   pone el ESP32. Con NC el contacto está cerrado en reposo y se abre al
-                  pulsar.
+                  presionar.
                 </p>
               </div>
 
               <div className="sm:col-span-2">
-                <Label htmlFor="modo">Qué hace al pulsarlo</Label>
+                <Label htmlFor="modo">Qué hace al presionarlo</Label>
                 <Select value={modo} onValueChange={(v) => setModo(v as "avisar" | "local")}>
                   <SelectTrigger id="modo"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -315,9 +315,9 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
           {activo && queCorre && (
             <div className="rounded border bg-slate-50 p-2 text-sm">
               {queCorre.correria
-                ? <>Pulsarlo aquí corre <b>{queCorre.correria}</b> en este equipo.</>
+                ? <>Presionarlo aquí corre <b>{queCorre.correria}</b> en este equipo.</>
                 : <span className="text-amber-800">
-                    Pulsarlo aquí no haría nada: {queCorre.motivo}.
+                    Presionarlo aquí no haría nada: {queCorre.motivo}.
                   </span>}
               {queCorre.candidatos.length > 1 && (
                 <div className="text-xs text-gray-500 mt-0.5">
@@ -330,7 +330,7 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
           <p className="text-xs text-gray-500">
             Se guarda en la memoria del propio equipo: sobrevive a reinicios y a una
             actualización por OTA, y viaja con él si cambia de estación. El producto lo
-            decide <strong>el equipo que se pulsa</strong>, no la pantalla.
+            decide <strong>el equipo que se presiona</strong>, no la pantalla.
           </p>
         </div>
 
@@ -405,7 +405,7 @@ export default function DeviceDetails({ unidad, abierto, onCerrar }: Props) {
 
           <p className="text-xs text-gray-500">
             <strong>Trabajar solo</strong> = golden grabado + botón en modo local. Mide y
-            canta el veredicto en los LEDs sin ordenador, pero <strong>no hay lote, ni
+            canta el veredicto en los LEDs sin computadora, pero <strong>no hay lote, ni
             etiqueta, ni quién lo probó</strong>: sirve para no parar la línea si se cae la
             PC, no para producir a ciegas. Se comprueba el CRC de lo grabado contra el de
             la base; si no cuadra, no se da por bueno.

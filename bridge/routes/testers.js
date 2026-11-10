@@ -55,7 +55,7 @@ const PINES_PROHIBIDOS = [
 // cada vez que alguien mira la placa.
 const BOTONES_DEL_MODULO = [
   { sw: "SW1", senal: "IO9",
-    motivo: "IO9 es SDA del I²C. Pulsarlo pone a masa la linea de datos de los " +
+    motivo: "IO9 es SDA del I²C. Presionarlo pone a tierra la linea de datos de los " +
             "TCA9535: corrompe la medida en curso y puede colgar el bus hasta el reset." },
   { sw: "SW2", senal: "EN",
     motivo: "Es el reset por hardware. No es una entrada: reinicia el modulo." },
@@ -321,7 +321,7 @@ export function registerTesterRoutes(app, { state, discovery, io, TesterClient, 
    * Monta un job EN el equipo: el golden se graba en su NVS.
    *
    * Es lo que hace posible el modo autónomo. Con el golden dentro, el equipo
-   * puede juzgar una pieza sin PC — enciende, lee su golden y al pulsar el
+   * puede juzgar una pieza sin PC — enciende, lee su golden y al presionar el
    * botón mide y canta el veredicto en los LEDs.
    *
    * `autonomo: true` además deja el disparador en modo local, que es el que
