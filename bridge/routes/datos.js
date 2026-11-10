@@ -257,23 +257,49 @@ export function registrarDatosRoutes(app) {
       // y el mismo producto con id diferente en cada maquina entra DOS VECES y
       // deja dos jobs aprobados para un solo SKU.
       //
-      // Lo que identifica de verdad a un job es su SKU y su huella: misma
-      // receta sobre el mismo cableado. Si ya esta, se actualiza en su sitio;
-      // si no, entra con id nuevo. Y despues se garantiza uno aprobado por SKU.
+      // Lo que identifica de verdad a un job es su SKU, su huella, su golden Y
+      // EL INSTANTE EN QUE SE CAPTURO. Si ya esta, se actualiza en su sitio; si
+      // no, entra con id nuevo. Y despues se garantiza uno aprobado por SKU.
+      //
+      // POR QUE captured_at FORMA PARTE DE LA CLAVE (medido con el archivo de
+      // Guadalajara, 2026-11-10):
+      //
+      // Sin el, la clave era SKU + huella + golden, y eso fusiona dos capturas
+      // distintas del MISMO cableado. En ese archivo, TODO-SOCKET-A tenia dos:
+      //
+      //   id 1  status=retired   captured_at 05:30:32  "capturado antes de la correccion"
+      //   id 2  status=approved  captured_at 06:09:38  "(fw 1.5.0)"
+      //
+      // Misma huella 5c557ae7 y mismo golden, asi que la segunda PISABA a la
+      // primera: 7 jobs en el archivo entraban como 6, y la historia de lo
+      // producido contra el job retirado se quedaba sin su job.
+      //
+      // El status NO sirve de clave: el UPDATE de mas abajo lo cambia, y al
+      // reimportar el mismo archivo ya no coincidiria y entraria por duplicado.
+      // captured_at es intrinseco de la captura y no lo toca nadie.
       const jobsDelArchivo = Array.isArray(bundle.tablas?.jobs) ? bundle.tablas.jobs : [];
       const colsJob = db.prepare("PRAGMA table_info(jobs)").all().map((c) => c.name);
+      // Del id QUE TRAE EL ARCHIVO al id que le toca en ESTA base. Sin esto, el
+      // historial que lo referencia apunta a un job que aqui es otro, o a
+      // ninguno: era un "FOREIGN KEY constraint failed" al cerrar la
+      // transaccion, sin decir en que tabla.
+      const mapaJobs = new Map();
       let jobsNuevos = 0, jobsActualizados = 0;
       for (const j of jobsDelArchivo) {
-        const ya = db.prepare("SELECT id FROM jobs WHERE sku = ? AND huella IS ? AND golden IS ?")
-                     .get(j.sku, j.huella ?? null, j.golden ?? null);
+        const ya = db.prepare(
+          "SELECT id FROM jobs WHERE sku = ? AND huella IS ? AND golden IS ? AND captured_at IS ?")
+          .get(j.sku, j.huella ?? null, j.golden ?? null, j.captured_at ?? null);
         const usadas = colsJob.filter((c) => c in j && c !== "id");
         if (ya) {
           db.prepare(`UPDATE jobs SET ${usadas.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
             .run(...usadas.map((c) => deJson(j[c]) ?? null), ya.id);
+          mapaJobs.set(j.id, ya.id);
           jobsActualizados++;
         } else {
-          db.prepare(`INSERT INTO jobs(${usadas.join(",")}) VALUES(${usadas.map(() => "?").join(",")})`)
+          const r = db.prepare(
+            `INSERT INTO jobs(${usadas.join(",")}) VALUES(${usadas.map(() => "?").join(",")})`)
             .run(...usadas.map((c) => deJson(j[c]) ?? null));
+          mapaJobs.set(j.id, Number(r.lastInsertRowid));
           jobsNuevos++;
         }
       }
@@ -289,7 +315,7 @@ export function registrarDatosRoutes(app) {
       resumen.jobs = { nuevos: jobsNuevos, actualizados: jobsActualizados, retirados };
 
       for (const t of [...TABLAS_CATALOGO, ...TABLAS_HISTORIAL]) {
-        if (t === "jobs") continue;              // ya tratados arriba, por SKU+huella
+        if (t === "jobs" || t === "tests") continue;   // tienen su propio trato, abajo
         const filas = bundle.tablas?.[t];
         if (!Array.isArray(filas) || !filas.length) continue;
         const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
@@ -300,6 +326,44 @@ export function registrarDatosRoutes(app) {
         const ins = db.prepare(sql);
         for (const f of filas) ins.run(...usadas.map((c) => deJson(f[c]) ?? null));
         resumen[t] = filas.length;
+      }
+
+      // Los TESTS tampoco van por id, y por la misma razon que los jobs.
+      //
+      // El id de un test es el numero de la pieza probada EN SU ESTACION. El
+      // test 93 de Guadalajara y el 93 de aqui son dos piezas distintas, asi
+      // que un INSERT OR REPLACE por id BORRA la nuestra y pone la suya: se
+      // pierde trazabilidad de produccion sin avisar. Entran con id nuevo.
+      //
+      // Lo que identifica a un test es el instante en que empezo, en que equipo
+      // y sobre que producto: dos piezas no pueden empezar a probarse en el
+      // mismo milisegundo en el mismo tester. Asi reimportar no duplica.
+      const testsDelArchivo = Array.isArray(bundle.tablas?.tests) ? bundle.tablas.tests : [];
+      if (testsDelArchivo.length) {
+        const colsTest = db.prepare("PRAGMA table_info(tests)").all().map((c) => c.name);
+        let testsNuevos = 0, testsActualizados = 0, sinJob = 0;
+        for (const f of testsDelArchivo) {
+          // job_id traducido. Si su job no venia en el archivo —pasa al exportar
+          // por producto— el test se guarda igual con job_id en blanco: perder
+          // el enlace es malo, perder el registro de una pieza producida es peor.
+          const jid = f.job_id == null ? null : (mapaJobs.get(f.job_id) ?? null);
+          if (f.job_id != null && jid == null) sinJob++;
+          const fila = { ...f, job_id: jid };
+          const ya = db.prepare(
+            "SELECT id FROM tests WHERE started_at IS ? AND tester_mac IS ? AND sku IS ?")
+            .get(f.started_at ?? null, f.tester_mac ?? null, f.sku ?? null);
+          const usadas = colsTest.filter((c) => c in fila && c !== "id");
+          if (ya) {
+            db.prepare(`UPDATE tests SET ${usadas.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`)
+              .run(...usadas.map((c) => deJson(fila[c]) ?? null), ya.id);
+            testsActualizados++;
+          } else {
+            db.prepare(`INSERT INTO tests(${usadas.join(",")}) VALUES(${usadas.map(() => "?").join(",")})`)
+              .run(...usadas.map((c) => deJson(fila[c]) ?? null));
+            testsNuevos++;
+          }
+        }
+        resumen.tests = { nuevos: testsNuevos, actualizados: testsActualizados, sin_job: sinJob };
       }
 
       for (const [k, v] of Object.entries(bundle.ajustes || {})) {

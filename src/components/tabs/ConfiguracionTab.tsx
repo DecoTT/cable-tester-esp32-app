@@ -116,12 +116,32 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
       const r = await api.datos.importar(bundle);
       if (!r.ok) return toast({ title: "No se importó", description: r.error, variant: "destructive" });
 
-      const filas = Object.entries(r.resumen ?? {}).map(([k, v]) => `${v} ${k}`).join(", ");
+      const filas = Object.entries(r.resumen ?? {})
+        .map(([k, v]) => `${typeof v === "object" && v !== null
+          ? Object.entries(v).map(([a, b]) => `${b} ${a}`).join(" / ")
+          : v} ${k}`)
+        .join(", ");
       toast({
         title: `Importado desde ${r.origen ?? "otra estación"}`,
         description: `${filas}. Copia de seguridad previa: ${r.respaldo}`,
       });
       qc.invalidateQueries();
+    } catch (e: any) {
+      // SIN ESTE catch LA IMPORTACIÓN FALLABA EN SILENCIO.
+      //
+      // api.j() lanza en cualquier HTTP que no sea 2xx, y aquí solo había un
+      // finally. César importó un archivo correcto, el bridge contestó 500 con
+      // el motivo en el cuerpo, y la pantalla no mostró NADA: ni toast, ni
+      // error, ni cambio. «Pero no reacciona al importarlo» (10-nov).
+      //
+      // Un fallo que no se ve es peor que un fallo: se repite el intento, se
+      // duda del archivo y se pierde el día. Que se vea siempre.
+      console.error("[importar]", e);
+      toast({
+        title: "No se pudo importar",
+        description: String(e?.message ?? e),
+        variant: "destructive",
+      });
     } finally { setImportando(false); }
   };
 
