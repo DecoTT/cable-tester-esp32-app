@@ -185,7 +185,7 @@ export default function ResultadosTab() {
                       <tr key={p.id} className="border-t hover:bg-gray-50 cursor-pointer"
                           onClick={() => setDetalle(detalle?.id === p.id ? null : { ...p, fallos })}>
                         <td className="p-3 whitespace-nowrap">
-                          {new Date(p.started_at).toLocaleString()}
+                          {new Date(p.started_at).toLocaleString("es-MX")}
                         </td>
                         <td className="p-3 font-mono">{p.sku}</td>
                         <td className="p-3">{p.operator}</td>

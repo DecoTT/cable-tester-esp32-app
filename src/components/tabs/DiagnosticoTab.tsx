@@ -32,7 +32,10 @@ import { useToast } from "@/hooks/use-toast";
 
 const hoy    = () => new Date().toISOString().slice(0, 10);
 const haceN  = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-const hora   = (s: string) => new Date(s).toLocaleString();
+// es-MX fijo: sin locale, el formato lo decide la configuración regional de
+// la PC, y una estación en inglés escribiría las fechas al revés. Las cifras
+// no pasan por aquí: todas usan toFixed(), que siempre da punto decimal.
+const hora   = (s: string) => new Date(s).toLocaleString("es-MX");
 
 function IconoTipo({ tipo }: { tipo: string }) {
   if (tipo === "gnd")     return <Zap className="w-4 h-4 text-amber-600" />;

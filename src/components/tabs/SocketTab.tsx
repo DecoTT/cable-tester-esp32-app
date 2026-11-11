@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 // pin, ni si falta un cable o está mal crimpeado.
 //
 // Aquí se construye la traducción MIDIENDO, no leyendo esquemáticos: el
-// operador mete 3,3 V con una punta en cada pin del JST, el tester detecta qué
+// operador mete 3.3 V con una punta en cada pin del JST, el tester detecta qué
 // canal se puso alto y pita. Recorrido el socket entero, la tabla está
 // completa — y es la del fixture real, no la del dibujo.
 //
@@ -349,7 +349,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
     <div className="space-y-6">
       <Alert>
         <AlertDescription>
-          Mete <strong>3,3 V</strong> con la punta en cada pin del conector JST. Cada
+          Mete <strong>3.3 V</strong> con la punta en cada pin del conector JST. Cada
           pin nuevo <strong>pita</strong> y queda anotado, sin que tengas que apartar la
           vista. El tester solo escucha: la tensión la pones tú.
         </AlertDescription>
@@ -376,7 +376,7 @@ export default function SocketTab({ sku, setSku }: { sku: string; setSku: (v: st
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-gray-600">
-            Toca un pin con la punta de 3,3 V y te digo cuál es. Al revés que el recorrido:
+            Toca un pin con la punta de 3.3 V y te digo cuál es. Al revés que el recorrido:
             aquí no hay que abrir ningún conector. Los números de pin son el <strong>orden en
             que se recorrió</strong> ese conector al mapearlo, no una serigrafía — por eso
             <span className="font-mono"> CN13.7</span> no se puede deducir mirando la pieza.

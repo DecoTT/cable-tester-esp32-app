@@ -682,7 +682,7 @@ export function registerProduccionRoutes(app, io, { discovery } = {}) {
   // se avisa al abrir la captura.
   // Con la punta en vez del boton: las child no llevan boton soldado, y los dos
   // pulsadores del modulo no sirven (SW2 es el reset; SW1 cuelga de IO9, que es
-  // SDA del I2C). Pero durante el recorrido de socket la punta de 3,3 V ya esta
+  // SDA del I2C). Pero durante el recorrido de socket la punta de 3.3 V ya esta
   // en la mano: se toca un pin cualquiera del socket de la caja que va en M,
   // luego el de L1, luego el de L2. La caja que ve tension es la que se toco.
   //

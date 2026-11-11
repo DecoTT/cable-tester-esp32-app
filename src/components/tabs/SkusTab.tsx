@@ -251,7 +251,7 @@ export default function SkusTab({ operator }: { operator: string }) {
                   <p className="text-xs text-gray-500">
                     De partida 5 y 50 Ω, que vienen del firmware y <strong>no son una medida de
                     este producto</strong>. Mide unas cuantas piezas buenas y ajústalo: la
-                    repetibilidad del banco es ±1,5 Ω, así que por debajo de 3 Ω avisaría por
+                    repetibilidad del banco es ±1.5 Ω, así que por debajo de 3 Ω avisaría por
                     ruido propio.
                   </p>
                   {!!limites.data?.excepciones?.length && (

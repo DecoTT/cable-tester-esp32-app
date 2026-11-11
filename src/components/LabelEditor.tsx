@@ -30,8 +30,8 @@ import type { LabelElement, LabelTemplate } from "@/services/api";
 // que la hace pdfkit — que es quien va a imprimir de verdad.
 
 const TAMANOS = {
-  large:    { w: 212.6, h: 141.7, nombre: "7,5 × 5 cm" },
-  standard: { w: 93.6,  h: 72.0,  nombre: '1,3" × 1"' },
+  large:    { w: 212.6, h: 141.7, nombre: "7.5 × 5 cm" },
+  standard: { w: 93.6,  h: 72.0,  nombre: '1.3" × 1"' },
 };
 
 const NUEVO: Record<LabelElement["type"], LabelElement> = {
@@ -94,8 +94,8 @@ export default function LabelEditor({
           <Select value={template.size} onValueChange={(v) => set({ ...template, size: v as "large" | "standard" })}>
             <SelectTrigger className="w-44 h-8"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="large">Large — 7,5 × 5 cm</SelectItem>
-              <SelectItem value="standard">Standard — 1,3" × 1"</SelectItem>
+              <SelectItem value="large">Large — 7.5 × 5 cm</SelectItem>
+              <SelectItem value="standard">Standard — 1.3" × 1"</SelectItem>
             </SelectContent>
           </Select>
         </div>

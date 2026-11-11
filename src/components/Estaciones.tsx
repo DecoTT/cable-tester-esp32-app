@@ -27,7 +27,10 @@ import { useToast } from "@/hooks/use-toast";
 // se puede completar después; una pieza que no aparece en el historial está
 // perdida para siempre.
 
-const hora = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
+// es-MX fijo: sin locale, el formato lo decide la configuración regional de
+// la PC, y una estación en inglés escribiría las fechas al revés. Las cifras
+// no pasan por aquí: todas usan toFixed(), que siempre da punto decimal.
+const hora = (s?: string | null) => (s ? new Date(s).toLocaleString("es-MX") : "—");
 
 export default function Estaciones({ operator }: { operator: string }) {
   const qc = useQueryClient();

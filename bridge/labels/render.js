@@ -95,13 +95,13 @@ function fill(str, data) {
  * Escribe un texto que NO se sale de su caja.
  *
  * pdfkit con lineBreak:false no avisa de nada: el texto que no cabe se sale por
- * el borde y el PDF sale igual de "bien". Sobre etiqueta de 7,5 cm eso es un
+ * el borde y el PDF sale igual de "bien". Sobre etiqueta de 7.5 cm eso es un
  * SKU pisando el logo o un QR en texto cortado a media cadena, y en planta se
  * descubre cuando ya hay 200 impresas.
  *
- * MEDIDO con la plantilla anterior: "TODO-ARNES-GRANDE" a 18 pt ocupa 204,3 pt
- * de los 204,6 disponibles —a un caracter de romperse— y la linea del QR con un
- * lote con fecha se iba a 209,5 pt.
+ * MEDIDO con la plantilla anterior: "TODO-ARNES-GRANDE" a 18 pt ocupa 204.3 pt
+ * de los 204.6 disponibles —a un caracter de romperse— y la linea del QR con un
+ * lote con fecha se iba a 209.5 pt.
  *
  * Aqui se baja el cuerpo hasta que entre, y si ni en el minimo cabe se recorta
  * con puntos suspensivos. Recortado se VE; desbordado no.

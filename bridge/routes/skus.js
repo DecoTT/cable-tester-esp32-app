@@ -88,7 +88,7 @@ export function registerSkuRoutes(app) {
    * aprende a ignorar el aviso. Asi que se parte de lo que da la pieza.
    *
    * El suelo de 3 ohm no es arbitrario: la repetibilidad MEDIDA de este banco
-   * es +-0,45 ohm de mediana y 1,54 en el p90 (tres pasadas sin tocar nada).
+   * es +-0.45 ohm de mediana y 1.54 en el p90 (tres pasadas sin tocar nada).
    * Un margen por debajo de eso avisaria por ruido propio.
    */
   app.post("/api/skus/:codigo/limites/proponer", (req, res) => {

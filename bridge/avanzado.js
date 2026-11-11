@@ -17,7 +17,7 @@
 // El discriminador no es el flanco: es el NIVEL y su ESTABILIDAD. Medido sobre
 // el arnés rojo de la 8744:
 //
-//     J00 -> J16   3300 mV, desviación 0,0 mV   unida
+//     J00 -> J16   3300 mV, desviación 0.0 mV   unida
 //     J02 -> J18   1698 mV, desviación 304 mV   ABIERTA - flota y vaga
 //
 // Un pin conectado sigue al excitador y no se mueve. Uno al aire se mueve por

@@ -118,11 +118,11 @@ export class Unit {
 
   /** Lee una sola vez, sin excitar. Para el aprendizaje de socket. */
   /**
-   * Escucha qué canal está alto — la punta de 3,3 V del recorrido de socket.
+   * Escucha qué canal está alto — la punta de 3.3 V del recorrido de socket.
    *
    * DOBLE MUESTRA, igual que el barrido. Antes era una sola, y esa es la
    * condición más favorable que existe para el fantasma del acoplamiento: TODOS
-   * los canales al aire y 3,3 V aplicados a uno.
+   * los canales al aire y 3.3 V aplicados a uno.
    *
    * MEDIDO en planta (2026-09-28): tocando un pin se encendían hasta 6 canales
    * a la vez. Y como un canal detectado queda marcado como visto, los fantasmas
@@ -141,8 +141,8 @@ export class Unit {
   /**
    * ¿Este canal esta ACOPLADO o UNIDO al que tiene tension?
    *
-   * Leer la tension no basta para decidirlo. Un vecino acoplado da 2,3 V, pero
-   * un vecino unido por una resistencia TAMBIEN puede dar 2,3 V — y eso no es
+   * Leer la tension no basta para decidirlo. Un vecino acoplado da 2.3 V, pero
+   * un vecino unido por una resistencia TAMBIEN puede dar 2.3 V — y eso no es
    * un fantasma, es un defecto que hay que ver.
    *
    * Lo que si los separa es que el acoplamiento es CAPACITIVO: no hay camino de
@@ -156,7 +156,7 @@ export class Unit {
    *
    *   V = 3.3 · 680 / (R + 680)   ->   R = 680 · (3.3/V − 1)
    *
-   * Union dura (R≈0) -> ~3,3 V. R=680 -> 1,65 V. R=10k -> 0,2 V.
+   * Union dura (R≈0) -> ~3.3 V. R=680 -> 1.65 V. R=10k -> 0.2 V.
    *
    * Cuesta dos peticiones y solo se paga cuando hay un candidato dudoso.
    */

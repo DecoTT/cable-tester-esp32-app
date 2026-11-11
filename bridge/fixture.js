@@ -35,7 +35,7 @@ const FIX_DIR = path.join(DATA_DIR, "fixtures");
 /**
  * Tension minima para dar un pin por tocado.
  *
- * Un pin con la punta de 3,3 V encima lee ~3300 mV. Un canal al aire acoplado
+ * Un pin con la punta de 3.3 V encima lee ~3300 mV. Un canal al aire acoplado
  * al de al lado lee alto pero MENOS: 2417 y 2391 mV en la medida de
  * acoplamiento. 2900 deja margen a los dos lados.
  */
@@ -250,7 +250,7 @@ export class SesionSocket {
           // §12): con un canal excitado, el conectado de verdad marco 3300 mV
           // y dos que no tocaban nada, 2417 y 2391 mV.
           //
-          // Un pin con la punta encima esta a 3,3 V; un fantasma se queda por
+          // Un pin con la punta encima esta a 3.3 V; un fantasma se queda por
           // debajo. Cuesta una lectura de ADC por candidato, y solo se paga
           // cuando hay candidato.
           const mv = Math.round((await u.volts(b)) * 1000);

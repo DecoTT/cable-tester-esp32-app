@@ -493,7 +493,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
               {ver.data.remoto && (
                 <p className="text-gray-600 mt-1">
                   Lo último publicado es del{" "}
-                  <strong>{new Date(ver.data.remoto.fecha ?? "").toLocaleDateString()}</strong>:{" "}
+                  <strong>{new Date(ver.data.remoto.fecha ?? "").toLocaleDateString("es-MX")}</strong>:{" "}
                   {ver.data.remoto.titulo}
                 </p>
               )}
@@ -537,7 +537,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
             <p className="text-sm text-gray-600">
               Al día
               {ver.data.local.fecha &&
-                ` — instalada la del ${new Date(ver.data.local.fecha).toLocaleDateString()}`}
+                ` — instalada la del ${new Date(ver.data.local.fecha).toLocaleDateString("es-MX")}`}
               <span className="font-mono text-xs text-gray-400 ml-2">
                 {ver.data.local.sha?.slice(0, 7)}
               </span>

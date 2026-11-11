@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 // LO QUE SÍ, Y POR QUÉ IMPORTA
 //
 // El dato no es el flanco: es el NIVEL y su ESTABILIDAD. Un pin conectado sigue
-// al excitador y no se mueve (desviación 0,0 mV); uno al aire vaga por
+// al excitador y no se mueve (desviación 0.0 mV); uno al aire vaga por
 // acoplamiento (300 mV de desviación). Eso distingue "conectado" de "al aire"
 // mejor que el valor medio, y además enseña en pantalla por qué hace falta la
 // doble muestra.

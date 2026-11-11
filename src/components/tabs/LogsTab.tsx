@@ -25,7 +25,10 @@ import { api, type RegistroAudit } from "@/services/api";
 
 const hoy   = () => new Date().toISOString().slice(0, 10);
 const haceN = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-const hora  = (s: string) => (s ? new Date(s).toLocaleString() : "—");
+// es-MX fijo: sin locale, el formato lo decide la configuración regional de
+// la PC, y una estación en inglés escribiría las fechas al revés. Las cifras
+// no pasan por aquí: todas usan toFixed(), que siempre da punto decimal.
+const hora  = (s: string) => (s ? new Date(s).toLocaleString("es-MX") : "—");
 
 type Vista = "auditoria" | "pruebas" | "etiquetas";
 
