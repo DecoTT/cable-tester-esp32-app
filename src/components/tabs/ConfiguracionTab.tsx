@@ -486,19 +486,30 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
         <CardContent className="space-y-3">
           {!ver.data ? (
             <p className="text-sm text-gray-500">Comprobando…</p>
-          ) : !ver.data.local.es_git ? (
-            <div className="text-sm">
-              <p>Esta copia se descargó como ZIP, así que <strong>no puedo saber qué versión
-                tiene</strong> ni actualizarla sola.</p>
+          ) : ver.data.hay === null ? (
+            /* Copia por ZIP recién instalada: todavía no sabe qué versión es.
+               Un ZIP de GitHub es idéntico se baje el día que se baje, así que
+               no hay nada dentro que lo diga. SÍ se puede actualizar: al
+               hacerlo queda anotada la versión y a partir de ahí ya se compara
+               sola. Por eso se ofrece el botón igual. */
+            <div className="space-y-3 text-sm">
+              <p>Esta copia se instaló desde el ZIP, así que todavía
+                <strong> no sé qué versión tiene</strong>.</p>
               {ver.data.remoto && (
-                <p className="text-gray-600 mt-1">
+                <p className="text-gray-600">
                   Lo último publicado es del{" "}
                   <strong>{new Date(ver.data.remoto.fecha ?? "").toLocaleDateString("es-MX")}</strong>:{" "}
                   {ver.data.remoto.titulo}
                 </p>
               )}
-              <p className="text-gray-600 mt-1">
-                Para actualizar, descarga el proyecto de nuevo desde GitHub.
+              <Button onClick={actualizar} disabled={actualizando}>
+                <Download className="w-4 h-4 mr-2" />
+                {actualizando ? "Actualizando…" : "Ponerla al día ahora"}
+              </Button>
+              <p className="text-xs text-gray-500">
+                Después de esto la app ya sabrá qué versión tiene y podrá avisarte sola.
+                No se toca ningún dato: productos, goldens e historial se quedan como están.
+                <strong> No lo hagas a media producción.</strong>
               </p>
             </div>
           ) : ver.data.hay ? (
@@ -516,7 +527,7 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
                   ))}
                 </ul>
               </div>
-              {ver.data.local.limpio === false ? (
+              {ver.data.local.es_git && ver.data.local.limpio === false ? (
                 <p className="text-sm text-amber-800">
                   Hay cambios sin guardar en esta carpeta. Actualizar los perdería, así que
                   no se hace solo.
@@ -541,6 +552,17 @@ export default function ConfiguracionTab({ operator }: { operator: string }) {
               <span className="font-mono text-xs text-gray-400 ml-2">
                 {ver.data.local.sha?.slice(0, 7)}
               </span>
+              <Button variant="ghost" size="sm" className="ml-2 h-6"
+                      onClick={() => ver.refetch()} disabled={ver.isFetching}>
+                <RefreshCw className={`w-3 h-3 mr-1 ${ver.isFetching ? "animate-spin" : ""}`} />
+                Buscar ahora
+              </Button>
+            </p>
+          )}
+          {ver.data?.error && (
+            <p className="text-xs text-amber-700">
+              No pude preguntarle a GitHub ({ver.data.error}). Si esta PC no tiene internet,
+              es normal: la app funciona igual, solo no se entera de versiones nuevas.
             </p>
           )}
 

@@ -40,11 +40,44 @@ async function git(...args) {
   return stdout.trim();
 }
 
+/**
+ * Sello que deja la actualizacion por ZIP.
+ *
+ * Una copia descomprimida de GitHub no trae NADA que diga que version es: no
+ * hay .git y el ZIP es identico se baje el dia que se baje. Por eso, cuando
+ * actualizar.bat instala por ZIP, escribe aqui el commit que acaba de poner.
+ * A partir de la primera actualizacion la estacion ya sabe lo que tiene.
+ *
+ * Vive en data/ a proposito: es lo unico que no se pisa al actualizar.
+ */
+const SELLO = path.join(RAIZ, "data", "version.json");
+
+function selloZip() {
+  try {
+    // El BOM se quita a mano. PowerShell escribe UTF-8 CON BOM por defecto, y
+    // JSON.parse revienta con el BOM delante: el fichero se ve perfecto al
+    // abrirlo y aun asi la app diria "no se que version tengo". Lo escribimos
+    // sin BOM desde actualizar.bat, pero leerlo asi aguanta las dos formas y
+    // tambien un fichero retocado a mano.
+    const s = JSON.parse(fs.readFileSync(SELLO, "utf8").replace(/^﻿/, ""));
+    return s && typeof s.sha === "string" ? s : null;
+  } catch { return null; }
+}
+
 /** Que hay instalado aqui. Nunca lanza: si algo falla, lo dice en el resultado. */
 export async function versionLocal() {
   const esGit = fs.existsSync(path.join(RAIZ, ".git"));
   const base = { es_git: esGit, sha: null, fecha: null, rama: null, limpio: null };
-  if (!esGit) return base;
+  if (!esGit) {
+    // Copia por ZIP. Si ya se actualizo alguna vez desde la app, el sello dice
+    // exactamente que commit tiene, y a partir de ahi se compara igual que un
+    // clon. Si no hay sello, es la instalacion original: no se puede saber,
+    // pero SI se puede actualizar — y al hacerlo queda sellada.
+    const s = selloZip();
+    return s
+      ? { ...base, sha: s.sha, fecha: s.fecha ?? null, rama: RAMA, limpio: true, zip: true }
+      : { ...base, zip: true };
+  }
   try {
     const [sha, fecha, rama, estado] = await Promise.all([
       git("rev-parse", "HEAD"),
@@ -137,13 +170,9 @@ export function registrarActualizacionRoutes(app) {
       return res.status(404).json({ ok: false, error: "no encuentro actualizar.bat" });
     }
     const local = await versionLocal();
-    if (!local.es_git) {
-      return res.status(422).json({
-        ok: false,
-        error: "Esta copia no se descargó con git, así que no se puede actualizar sola. " +
-               "Descarga el proyecto de nuevo desde GitHub.",
-      });
-    }
+    // Una copia por ZIP tambien se actualiza: actualizar.bat baja el ZIP de
+    // GitHub y lo pone encima. Antes se rechazaba aqui, y por eso una estacion
+    // de planta dependia de que alguien se acordara de reinstalarla a mano.
     if (local.limpio === false) {
       return res.status(422).json({
         ok: false,
